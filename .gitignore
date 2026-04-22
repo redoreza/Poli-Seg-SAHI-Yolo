@@ -1,0 +1,61 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Model files (large binaries — commit only if needed via Git LFS)
+models/*.pt
+
+# Keep active_model.txt placeholder
+!models/active_model.txt
+
+# Static runtime folders
+static/uploads/*
+static/results/*
+static/annotations/*
+static/dataset/*
+# Keep folder structure
+!static/uploads/.gitkeep
+!static/results/.gitkeep
+!static/annotations/.gitkeep
+!static/dataset/.gitkeep
+
+# VS Code / Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Claude Code
+.claude/
+
+# Cookies (berisi data sensitif browser)
+config/yt_cookies.txt

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>{{ title }}</h2>
+
+{% if message %}
+<div class="alert alert-success">
+    {{ message }}
+</div>
+{% endif %}
+
+<!-- Tombol untuk download ZIP seluruh dataset -->
+<button id="downloadDatasetZipBtn" class="btn btn-primary mt-3">Download ZIP Seluruh Dataset</button>
+
+<script>
+    const btnDownload = document.getElementById('downloadDatasetZipBtn');
+    btnDownload.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/experimental/download-dataset-zip');
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error('Gagal download ZIP: ' + errorText);
+            }
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'dataset.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+</script>
+
+<a href="{{ url_for('main.home') }}" class="btn btn-secondary mt-4">Kembali ke Halaman Home</a>
+{% endblock %}

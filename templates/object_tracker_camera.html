@@ -1,0 +1,1308 @@
+{% extends "base.html" %}
+{% block main_content %}
+
+<!-- ═══════════════════════════════════════════════════════════ TOP BAR -->
+<div class="ot-topbar">
+  <div class="ot-topbar-left">
+    <i class="bi bi-speedometer2 ot-icon-accent"></i>
+    <span class="ot-page-title">Object Speed Tracker</span>
+  </div>
+  <div class="ot-topbar-right">
+    <div id="modelChip" class="ot-chip ot-chip-idle" title="Klik untuk refresh">
+      <span class="ot-chip-dot"></span>
+      <span id="modelLabel">Memuat model…</span>
+    </div>
+    <div id="fpsChip" class="ot-chip ot-chip-dim">
+      <i class="bi bi-camera-video-fill"></i>
+      <span id="fpsLabel">– fps</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ LAYOUT -->
+<div class="ot-layout">
+
+  <!-- ─────────────────────────────────────── LEFT: VIDEO PANEL -->
+  <div class="ot-video-col">
+
+    <!-- Video wrapper: canvas overlay tepat di atas video -->
+    <div class="ot-stage" id="stage">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="cvs"></canvas>
+
+      <!-- Crosshair overlay saat draw mode aktif -->
+      <div id="drawOverlay" class="draw-overlay hidden">
+        <div class="draw-overlay-inner">
+          <i class="bi bi-plus-lg"></i>
+          <span id="drawOverlayLabel">Menggambar Garis A</span>
+        </div>
+      </div>
+
+      <!-- Play / Pause overlay controls -->
+      <div class="stage-controls" id="stageControls">
+        <button id="btnPlayPause" class="stage-btn" title="Play / Pause">
+          <i class="bi bi-pause-fill" id="ppIcon"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Playback progress bar (video file / stream) -->
+    <div class="ot-progress-wrap" id="progressWrap" style="display:none">
+      <div class="ot-progress-bar">
+        <div id="progressFill" class="ot-progress-fill"></div>
+      </div>
+      <span id="progressTime" class="ot-progress-time">0:00 / 0:00</span>
+    </div>
+
+    <!-- Toolbar bawah video -->
+    <div class="ot-toolbar">
+      <!-- Source tabs -->
+      <div class="ot-tab-group">
+        <button class="ot-tab active" id="tabCam"    data-tab="cam">
+          <i class="bi bi-webcam"></i> Kamera
+        </button>
+        <button class="ot-tab" id="tabFile"   data-tab="file">
+          <i class="bi bi-film"></i> File
+        </button>
+        <button class="ot-tab" id="tabStream" data-tab="stream">
+          <i class="bi bi-broadcast"></i> URL / Stream
+        </button>
+      </div>
+
+      <!-- Tab: Kamera -->
+      <div class="ot-tabcontent" id="contentCam">
+        <button id="btnStart" class="ot-btn btn-green">
+          <i class="bi bi-camera-video"></i> Mulai Kamera
+        </button>
+        <button id="btnStop" class="ot-btn btn-red" disabled>
+          <i class="bi bi-stop-circle"></i> Stop
+        </button>
+      </div>
+
+      <!-- Tab: File -->
+      <div class="ot-tabcontent hidden" id="contentFile">
+        <label class="ot-btn btn-blue" style="position:relative;overflow:hidden;cursor:pointer;">
+          <i class="bi bi-folder2-open"></i> Pilih Video
+          <input type="file" id="videoUpload" accept="video/*" class="file-input">
+        </label>
+        <span id="uploadedName" class="ot-file-name">Belum ada file</span>
+        <button id="btnStopFile" class="ot-btn btn-red" disabled>
+          <i class="bi bi-stop-circle"></i> Stop
+        </button>
+      </div>
+
+      <!-- Tab: URL / Stream -->
+      <div class="ot-tabcontent-block hidden" id="contentStream">
+
+        <!-- URL input row -->
+        <div class="ot-url-row">
+          <input id="streamUrl" class="ot-url-input"
+                 placeholder="YouTube URL, HLS .m3u8, atau direct video URL"
+                 type="url" autocomplete="off" />
+          <button id="btnLoadUrl" class="ot-btn btn-cyan">
+            <i class="bi bi-play-circle"></i> Load
+          </button>
+          <button id="btnStopStream" class="ot-btn btn-red" disabled>
+            <i class="bi bi-stop-circle"></i> Stop
+          </button>
+        </div>
+
+        <!-- Status -->
+        <div id="urlStatus" class="ot-url-status"></div>
+
+        <!-- Cookies panel (collapsible) -->
+        <details class="cookies-panel" id="cookiesPanel">
+          <summary class="cookies-summary">
+            <i class="bi bi-shield-lock"></i>
+            <span>Cookie YouTube</span>
+            <span id="cookiesBadge" class="ck-badge ck-none">Belum ada</span>
+          </summary>
+
+          <div class="cookies-body">
+            <p class="ck-info">
+              YouTube memblokir bot. Solusi: export cookies dari browser lalu upload di sini.
+            </p>
+
+            <!-- Step 1 -->
+            <div class="ck-step">
+              <span class="ck-num">1</span>
+              <span>Install ekstensi
+                <a href="https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp"
+                   target="_blank" class="ck-link">Get cookies.txt LOCALLY</a>
+                di Chrome / Firefox
+              </span>
+            </div>
+            <!-- Step 2 -->
+            <div class="ck-step">
+              <span class="ck-num">2</span>
+              <span>Buka <b>youtube.com</b>, login, lalu klik ekstensi → Export cookies</span>
+            </div>
+            <!-- Step 3 -->
+            <div class="ck-step">
+              <span class="ck-num">3</span>
+              <span>Upload file <code>cookies.txt</code> di bawah ini</span>
+            </div>
+
+            <!-- Upload / Delete -->
+            <div class="ck-actions">
+              <label class="ot-btn btn-blue" style="position:relative;overflow:hidden;cursor:pointer;">
+                <i class="bi bi-upload"></i> Upload cookies.txt
+                <input type="file" id="cookiesFile" accept=".txt" class="file-input">
+              </label>
+              <button id="btnDeleteCookies" class="ot-btn btn-ghost" title="Hapus cookies">
+                <i class="bi bi-trash3"></i> Hapus
+              </button>
+            </div>
+            <div id="cookiesStatus" class="ot-url-status" style="margin-top:.3rem"></div>
+          </div>
+        </details>
+
+      </div>
+    </div>
+  </div><!-- end video-col -->
+
+  <!-- ─────────────────────────────────────── RIGHT: CONTROL PANEL -->
+  <div class="ot-sidebar">
+
+    <!-- ── Draw Lines ──────────────────────────────────────── -->
+    <section class="ot-card">
+      <h3 class="ot-card-head"><i class="bi bi-vector-pen"></i> Garis Ukur</h3>
+
+      <div class="ot-line-btns">
+        <button id="btnDrawA" class="ot-line-btn" data-line="A">
+          <span class="ldot ldot-a"></span>
+          <span class="lname">Garis A</span>
+          <span id="stA" class="lstatus">–</span>
+        </button>
+        <button id="btnDrawB" class="ot-line-btn" data-line="B">
+          <span class="ldot ldot-b"></span>
+          <span class="lname">Garis B</span>
+          <span id="stB" class="lstatus">–</span>
+        </button>
+      </div>
+
+      <button id="btnClear" class="ot-btn btn-ghost w-full mt-2">
+        <i class="bi bi-trash3"></i> Hapus Garis
+      </button>
+
+      <p class="ot-note">
+        Objek yang melewati <b>A</b> lalu <b>B</b> (atau sebaliknya) diukur kecepatannya.
+        Garis boleh miring ke arah mana saja.
+      </p>
+    </section>
+
+    <!-- ── Jarak Nyata ─────────────────────────────────────── -->
+    <section class="ot-card">
+      <h3 class="ot-card-head"><i class="bi bi-rulers"></i> Jarak A → B</h3>
+      <div class="ot-field">
+        <input id="distInput" class="ot-input" type="number"
+               value="10" min="0.1" step="0.1">
+        <span class="ot-unit">meter</span>
+      </div>
+      <p class="ot-note">Jarak nyata antara Garis A dan B di lapangan.</p>
+    </section>
+
+    <!-- ── Speed Panel ─────────────────────────────────────── -->
+    <section class="ot-card ot-card-flex">
+      <div class="ot-card-head-row">
+        <h3 class="ot-card-head"><i class="bi bi-lightning-charge"></i> Kecepatan</h3>
+        <button id="btnReset" class="ot-icon-btn" title="Reset semua">
+          <i class="bi bi-arrow-counterclockwise"></i>
+        </button>
+      </div>
+      <div id="speedPanel" class="speed-panel">
+        <div class="speed-empty">
+          <i class="bi bi-hourglass-split"></i>
+          Mulai kamera &amp; gambar dua garis
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Live Log ─────────────────────────────────────────── -->
+    <section class="ot-card">
+      <h3 class="ot-card-head"><i class="bi bi-terminal"></i> Log</h3>
+      <div id="log" class="ot-log"></div>
+    </section>
+
+  </div><!-- end sidebar -->
+</div><!-- end layout -->
+
+<!-- hls.js untuk stream HLS/m3u8 -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════
+//  CONFIG
+// ════════════════════════════════════════════════════════════════
+const CAP_W = 320, CAP_H = 240;
+const COL_A = '#00e5ff', COL_B = '#ff6b35', COL_BOX = '#b2ff59';
+const MIN_DRAG_PX = 8;
+
+// ════════════════════════════════════════════════════════════════
+//  DOM
+// ════════════════════════════════════════════════════════════════
+const video        = document.getElementById('video');
+const cvs          = document.getElementById('cvs');
+const ctx          = cvs.getContext('2d');
+const stage        = document.getElementById('stage');
+const drawOverlay  = document.getElementById('drawOverlay');
+const drawOvLabel  = document.getElementById('drawOverlayLabel');
+const stageControls= document.getElementById('stageControls');
+const ppIcon       = document.getElementById('ppIcon');
+const btnPlayPause = document.getElementById('btnPlayPause');
+const progressWrap = document.getElementById('progressWrap');
+const progressFill = document.getElementById('progressFill');
+const progressTime = document.getElementById('progressTime');
+
+const tabBtns      = document.querySelectorAll('.ot-tab');
+const contentCam   = document.getElementById('contentCam');
+const contentFile  = document.getElementById('contentFile');
+const contentStream= document.getElementById('contentStream');
+const cookiesBadge = document.getElementById('cookiesBadge');
+const cookiesFile  = document.getElementById('cookiesFile');
+const cookiesStatus= document.getElementById('cookiesStatus');
+const btnDelCookies= document.getElementById('btnDeleteCookies');
+
+const btnStart     = document.getElementById('btnStart');
+const btnStop      = document.getElementById('btnStop');
+const videoUpload  = document.getElementById('videoUpload');
+const uploadedName = document.getElementById('uploadedName');
+const btnStopFile  = document.getElementById('btnStopFile');
+const streamUrl    = document.getElementById('streamUrl');
+const btnLoadUrl   = document.getElementById('btnLoadUrl');
+const urlStatus    = document.getElementById('urlStatus');
+const btnStopStream= document.getElementById('btnStopStream');
+
+const btnDrawA     = document.getElementById('btnDrawA');
+const btnDrawB     = document.getElementById('btnDrawB');
+const btnClear     = document.getElementById('btnClear');
+const stA          = document.getElementById('stA');
+const stB          = document.getElementById('stB');
+const distInput    = document.getElementById('distInput');
+const speedPanel   = document.getElementById('speedPanel');
+const btnReset     = document.getElementById('btnReset');
+const logEl        = document.getElementById('log');
+const modelLabel   = document.getElementById('modelLabel');
+const modelChip    = document.getElementById('modelChip');
+const fpsLabel     = document.getElementById('fpsLabel');
+
+// ════════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════════
+let cameraStream  = null;
+let hlsInstance   = null;
+let isTracking    = false;
+let isProcessing  = false;
+let trackTimer    = null;
+let drawMode      = null;   // 'A' | 'B' | null
+let drawStart     = null;
+let drawLive      = null;
+const lines       = { A: null, B: null };
+
+// FPS counter
+let fpsCount = 0, fpsLast = performance.now();
+
+// ════════════════════════════════════════════════════════════════
+//  CANVAS SYNC
+// ════════════════════════════════════════════════════════════════
+function syncCanvas() {
+  const vw = video.clientWidth, vh = video.clientHeight;
+  if (!vw || !vh) return;
+  cvs.width  = CAP_W;
+  cvs.height = CAP_H;
+  cvs.style.width  = vw + 'px';
+  cvs.style.height = vh + 'px';
+  renderScene();
+}
+video.addEventListener('loadedmetadata', syncCanvas);
+new ResizeObserver(syncCanvas).observe(video);
+
+// ════════════════════════════════════════════════════════════════
+//  MODEL STATUS
+// ════════════════════════════════════════════════════════════════
+async function refreshModel() {
+  try {
+    const d = await (await fetch('/object-tracker/api/model-status')).json();
+    if (d.status === 'loaded') {
+      modelLabel.textContent = d.model_name;
+      modelChip.className    = 'ot-chip ot-chip-ok';
+    } else {
+      modelLabel.textContent = 'Tidak ada model';
+      modelChip.className    = 'ot-chip ot-chip-warn';
+    }
+  } catch { modelLabel.textContent = 'Error'; }
+}
+modelChip.addEventListener('click', refreshModel);
+refreshModel();
+
+// ════════════════════════════════════════════════════════════════
+//  TABS
+// ════════════════════════════════════════════════════════════════
+const tabContents = { cam: contentCam, file: contentFile, stream: contentStream };
+
+tabBtns.forEach(btn => btn.addEventListener('click', () => {
+  tabBtns.forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  Object.values(tabContents).forEach(c => {
+    c.classList.add('hidden');
+  });
+  tabContents[btn.dataset.tab].classList.remove('hidden');
+}));
+
+// ════════════════════════════════════════════════════════════════
+//  PLAY / PAUSE
+// ════════════════════════════════════════════════════════════════
+btnPlayPause.addEventListener('click', () => {
+  if (video.paused) { video.play(); }
+  else              { video.pause(); }
+});
+
+video.addEventListener('play',  () => ppIcon.className = 'bi bi-pause-fill');
+video.addEventListener('pause', () => ppIcon.className = 'bi bi-play-fill');
+
+// Progress bar update
+video.addEventListener('timeupdate', () => {
+  if (!video.duration) return;
+  const pct = video.currentTime / video.duration * 100;
+  progressFill.style.width = pct + '%';
+  progressTime.textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+});
+
+function fmt(sec) {
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+// Seek on click
+document.querySelector('.ot-progress-bar')?.addEventListener('click', e => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct  = (e.clientX - rect.left) / rect.width;
+  if (video.duration) video.currentTime = pct * video.duration;
+});
+
+// ════════════════════════════════════════════════════════════════
+//  KAMERA
+// ════════════════════════════════════════════════════════════════
+btnStart.addEventListener('click', async () => {
+  let devId = null;
+  try {
+    const cfg = await (await fetch('/setting/api/get-camera-setting')).json();
+    devId = cfg.selected_camera || null;
+  } catch { /* ignore */ }
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: devId ? { exact: devId } : undefined,
+               width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    video.srcObject = cameraStream;
+    progressWrap.style.display = 'none';
+    startTracking();
+    btnStart.disabled = true; btnStop.disabled = false;
+    log('Kamera dimulai.');
+  } catch (err) { alert('Gagal akses kamera: ' + err.message); }
+});
+
+btnStop.addEventListener('click', () => {
+  stopTracking();
+  cameraStream?.getTracks().forEach(t => t.stop());
+  cameraStream = null;
+  video.srcObject = null;
+  btnStart.disabled = false; btnStop.disabled = true;
+  clearCanvas();
+  log('Kamera dihentikan.');
+});
+
+// ════════════════════════════════════════════════════════════════
+//  FILE VIDEO
+// ════════════════════════════════════════════════════════════════
+videoUpload.addEventListener('change', async () => {
+  const file = videoUpload.files[0];
+  if (!file) return;
+  uploadedName.textContent = file.name;
+
+  const fd = new FormData(); fd.append('video', file);
+  try {
+    const r = await fetch('/object-tracker/api/upload-video', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.filename) {
+      await loadVideoSrc(`/static/uploads/${d.filename}`, 'direct');
+      btnStopFile.disabled = false;
+      log(`File "${d.filename}" dimuat.`);
+    }
+  } catch { alert('Gagal upload file.'); }
+});
+
+btnStopFile.addEventListener('click', () => {
+  stopVideoSrc();
+  btnStopFile.disabled = true;
+  uploadedName.textContent = 'Belum ada file';
+  log('Video file dihentikan.');
+});
+
+// ════════════════════════════════════════════════════════════════
+//  URL / STREAM (YouTube, HLS, dll)
+// ════════════════════════════════════════════════════════════════
+btnLoadUrl.addEventListener('click', loadStream);
+streamUrl.addEventListener('keydown', e => { if (e.key === 'Enter') loadStream(); });
+
+const STRATEGIES_LABEL = {
+  'iOS client':    '📱 iOS client',
+  'TV client':     '📺 TV client',
+  'cookies file':  '🍪 cookies file',
+  'default':       '🔄 default',
+};
+function fmtSource(src) {
+  if (!src) return '';
+  for (const [k, v] of Object.entries(STRATEGIES_LABEL)) {
+    if (src.includes(k)) return v;
+  }
+  if (src.includes('browser:')) return '🌐 ' + src.split('browser:')[1];
+  return src;
+}
+
+async function loadStream() {
+  const url = streamUrl.value.trim();
+  if (!url) return;
+
+  setUrlStatus('loading', '⏳ Mencoba beberapa strategi…');
+  btnLoadUrl.disabled = true;
+
+  try {
+    const r = await fetch('/object-tracker/api/resolve-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const d = await r.json();
+
+    if (!r.ok || d.error) {
+      const hint = d.need_cookies
+        ? ' — Buka panel Cookie YouTube di bawah untuk upload cookies.txt'
+        : '';
+      setUrlStatus('error', `✗ ${d.error || 'Gagal'}${hint}`);
+      if (d.need_cookies) {
+        document.getElementById('cookiesPanel').open = true;
+      }
+      return;
+    }
+
+    setUrlStatus('ok', `✓ ${fmtSource(d.source)} — stream siap`);
+    await loadVideoSrc(d.url, d.type);
+    btnStopStream.disabled = false;
+    log(`Stream: ${fmtSource(d.source)} — ${url.slice(0, 55)}…`);
+
+  } catch (err) {
+    setUrlStatus('error', '✗ Koneksi error: ' + err.message);
+  } finally {
+    btnLoadUrl.disabled = false;
+  }
+}
+
+function setUrlStatus(type, msg) {
+  urlStatus.textContent = msg;
+  urlStatus.className   = `ot-url-status status-${type}`;
+}
+
+btnStopStream.addEventListener('click', () => {
+  stopVideoSrc();
+  btnStopStream.disabled = true;
+  urlStatus.textContent  = '';
+  log('Stream dihentikan.');
+});
+
+// ════════════════════════════════════════════════════════════════
+//  VIDEO SOURCE HELPERS
+// ════════════════════════════════════════════════════════════════
+async function loadVideoSrc(src, type) {
+  stopVideoSrc();
+
+  if (type === 'hls' && Hls.isSupported()) {
+    hlsInstance = new Hls({ maxBufferLength: 15 });
+    hlsInstance.loadSource(src);
+    hlsInstance.attachMedia(video);
+    await new Promise(res => hlsInstance.on(Hls.Events.MANIFEST_PARSED, res));
+  } else {
+    video.srcObject = null;
+    video.src = src;
+    await video.load();
+  }
+
+  await video.play().catch(() => {});
+  progressWrap.style.display = video.duration ? 'flex' : 'none';
+  startTracking();
+}
+
+function stopVideoSrc() {
+  stopTracking();
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+  video.pause();
+  video.src       = '';
+  video.srcObject = null;
+  progressWrap.style.display = 'none';
+  clearCanvas();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  COOKIES MANAGEMENT
+// ════════════════════════════════════════════════════════════════
+async function refreshCookiesStatus() {
+  try {
+    const d = await (await fetch('/object-tracker/api/cookies-status')).json();
+    if (d.exists) {
+      cookiesBadge.textContent = `✓ ${d.size_kb} KB`;
+      cookiesBadge.className   = 'ck-badge ck-ok';
+    } else {
+      cookiesBadge.textContent = 'Belum ada';
+      cookiesBadge.className   = 'ck-badge ck-none';
+    }
+  } catch { /* ignore */ }
+}
+
+cookiesFile?.addEventListener('change', async () => {
+  const file = cookiesFile.files[0];
+  if (!file) return;
+  const fd = new FormData(); fd.append('cookies', file);
+  cookiesStatus.textContent = '⏳ Mengupload…';
+  cookiesStatus.className   = 'ot-url-status status-loading';
+  try {
+    const r = await fetch('/object-tracker/api/upload-cookies', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) {
+      cookiesStatus.textContent = `✓ Cookies tersimpan (${d.size_kb} KB)`;
+      cookiesStatus.className   = 'ot-url-status status-ok';
+      await refreshCookiesStatus();
+      log(`Cookies diupload: ${d.size_kb} KB`);
+    } else {
+      cookiesStatus.textContent = '✗ ' + (d.error || 'Gagal');
+      cookiesStatus.className   = 'ot-url-status status-error';
+    }
+  } catch (e) {
+    cookiesStatus.textContent = '✗ Error: ' + e.message;
+    cookiesStatus.className   = 'ot-url-status status-error';
+  }
+});
+
+btnDelCookies?.addEventListener('click', async () => {
+  await fetch('/object-tracker/api/delete-cookies', { method: 'POST' });
+  cookiesStatus.textContent = 'Cookies dihapus.';
+  cookiesStatus.className   = 'ot-url-status status-loading';
+  await refreshCookiesStatus();
+  log('Cookies dihapus.');
+});
+
+refreshCookiesStatus();
+
+// ════════════════════════════════════════════════════════════════
+//  TRACKING LOOP (sequential — tidak overlap)
+// ════════════════════════════════════════════════════════════════
+function startTracking() {
+  stopTracking();
+  isTracking = true;
+  scheduleFrame();
+}
+
+function stopTracking() {
+  isTracking = false;
+  if (trackTimer) { clearTimeout(trackTimer); trackTimer = null; }
+}
+
+function scheduleFrame() {
+  if (!isTracking) return;
+  trackTimer = setTimeout(async () => {
+    await sendFrame();
+    scheduleFrame();
+  }, 40);  // ~25 fps max
+}
+
+async function sendFrame() {
+  if (isProcessing || video.readyState < 2 || video.paused) return;
+  isProcessing = true;
+
+  try {
+    const cap = document.createElement('canvas');
+    cap.width = CAP_W; cap.height = CAP_H;
+    cap.getContext('2d').drawImage(video, 0, 0, CAP_W, CAP_H);
+    const b64 = cap.toDataURL('image/jpeg', 0.72);
+
+    // Scale lines dari display-px ke capture-px
+    const sw = CAP_W / (cvs.clientWidth  || CAP_W);
+    const sh = CAP_H / (cvs.clientHeight || CAP_H);
+    const scaleLine = l => l ? { x1: l.x1*sw, y1: l.y1*sh, x2: l.x2*sw, y2: l.y2*sh } : null;
+
+    const payload = {
+      image:      b64,
+      lines:      [lines.A, lines.B].filter(Boolean).map(scaleLine),
+      distance_m: parseFloat(distInput.value) || 10,
+    };
+
+    const r = await fetch('/object-tracker/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return;
+
+    const d = await r.json();
+    renderScene(d.boxes || []);
+    updateSpeedPanel(d.all_speeds || {});
+    for (const [id, spd] of Object.entries(d.new_speeds || {})) {
+      log(`ID ${id} → ${(spd * 3.6).toFixed(1)} km/h`);
+    }
+
+    // FPS counter
+    fpsCount++;
+    const now = performance.now();
+    if (now - fpsLast >= 1000) {
+      fpsLabel.textContent = fpsCount + ' fps';
+      fpsCount = 0; fpsLast = now;
+    }
+
+  } finally { isProcessing = false; }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RENDER
+// ════════════════════════════════════════════════════════════════
+function clearCanvas() {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+}
+
+function renderScene(boxes) {
+  clearCanvas();
+  drawLines();
+  if (drawMode && drawStart && drawLive) drawPreview();
+  if (boxes) drawBoxes(boxes);
+}
+
+function drawLines() {
+  const sw = CAP_W / (cvs.clientWidth  || CAP_W);
+  const sh = CAP_H / (cvs.clientHeight || CAP_H);
+  const toC = (l) => ({ x1: l.x1*sw, y1: l.y1*sh, x2: l.x2*sw, y2: l.y2*sh });
+
+  if (lines.A) renderLine(toC(lines.A), COL_A, 'A');
+  if (lines.B) renderLine(toC(lines.B), COL_B, 'B');
+}
+
+// Snap koordinat ke pixel grid agar garis tajam (hindari sub-pixel blur)
+function px(v) { return Math.round(v) + 0.5; }
+
+function renderLine(l, col, label) {
+  const x1 = px(l.x1), y1 = px(l.y1), x2 = px(l.x2), y2 = px(l.y2);
+
+  // Shadow hitam tipis dulu (biar kontras di background terang)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth   = 2.5;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+
+  // Garis utama
+  ctx.save();
+  ctx.shadowColor  = col;
+  ctx.shadowBlur   = 6;
+  ctx.strokeStyle  = col;
+  ctx.lineWidth    = 1;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.restore();
+
+  // Titik ujung
+  [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach(p => {
+    ctx.save();
+    ctx.fillStyle   = '#000';
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle   = col;
+    ctx.shadowColor = col; ctx.shadowBlur = 5;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+
+  // Arrowhead di B — kecil & tajam
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  const al  = 7, aw = Math.PI / 6;
+  ctx.save();
+  ctx.fillStyle   = col;
+  ctx.shadowColor = col; ctx.shadowBlur = 4;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - al * Math.cos(ang - aw), y2 - al * Math.sin(ang - aw));
+  ctx.lineTo(x2 - al * Math.cos(ang + aw), y2 - al * Math.sin(ang + aw));
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+
+  // Label — semi-transparent pill di tengah garis
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const txt = `${label}`;
+  ctx.save();
+  ctx.font = 'bold 7px monospace';
+  const tw = ctx.measureText(txt).width;
+  // Outline latar hitam
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  roundRect(ctx, mx - tw/2 - 3.5, my - 6, tw + 7, 11, 2.5);
+  ctx.fill();
+  // Teks warna
+  ctx.fillStyle    = col;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(txt, mx, my - 0.5);
+  ctx.restore();
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x+r, y); c.lineTo(x+w-r, y);
+  c.arcTo(x+w, y, x+w, y+r, r);
+  c.lineTo(x+w, y+h-r); c.arcTo(x+w, y+h, x+w-r, y+h, r);
+  c.lineTo(x+r, y+h); c.arcTo(x, y+h, x, y+h-r, r);
+  c.lineTo(x, y+r); c.arcTo(x, y, x+r, y, r);
+  c.closePath();
+}
+
+function drawPreview() {
+  const sw = CAP_W / (cvs.clientWidth  || CAP_W);
+  const sh = CAP_H / (cvs.clientHeight || CAP_H);
+  const ax = px(drawStart.x * sw), ay = px(drawStart.y * sh);
+  const bx = px(drawLive.x  * sw), by = px(drawLive.y  * sh);
+  const col = drawMode === 'A' ? COL_A : COL_B;
+
+  // Shadow hitam tipis untuk kontras
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth   = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  ctx.restore();
+
+  // Garis preview warna — tipis 0.8px
+  ctx.save();
+  ctx.strokeStyle  = col;
+  ctx.lineWidth    = 0.8;
+  ctx.globalAlpha  = 0.85;
+  ctx.setLineDash([5, 4]);
+  ctx.shadowColor  = col;
+  ctx.shadowBlur   = 4;
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+
+  // Titik awal
+  ctx.setLineDash([]);
+  ctx.fillStyle  = col;
+  ctx.globalAlpha = 1;
+  ctx.beginPath(); ctx.arc(ax, ay, 2, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Panjang garis (indikator jarak dalam px)
+  const lenPx = Math.hypot(bx - ax, by - ay).toFixed(0);
+  if (lenPx > 15) {
+    const mx = (ax + bx) / 2, my = (ay + by) / 2;
+    ctx.save();
+    ctx.font = '6px monospace';
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(mx - 10, my - 6, 20, 9);
+    ctx.fillStyle = col;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${lenPx}px`, mx, my - 0.5);
+    ctx.restore();
+  }
+}
+
+function drawBoxes(boxes) {
+  boxes.forEach(b => {
+    const { x, y, w, h, label, id, speed } = b;
+    const kmh    = speed * 3.6;
+    const hasSpd = kmh > 0;
+
+    // Warna box: kuning-hijau jika ada speed, abu tipis jika belum
+    const col = hasSpd ? COL_BOX : 'rgba(210,220,255,0.5)';
+
+    // Snap semua koordinat ke pixel grid
+    const bx = Math.round(x), by = Math.round(y);
+    const bw = Math.round(w), bh = Math.round(h);
+
+    // ── Corner brackets — lebih tajam & tidak menutupi objek ──────────
+    const armX = Math.max(4, Math.min(8, bw * 0.22));   // panjang sayap horizontal
+    const armY = Math.max(4, Math.min(8, bh * 0.22));   // panjang sayap vertikal
+
+    ctx.save();
+
+    // Shadow hitam tipis dulu → kontras di background apapun
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth   = 2.2;
+    ctx.lineCap     = 'square';
+    _drawBrackets(bx, by, bw, bh, armX, armY);
+    ctx.stroke();
+
+    // Bracket utama — tajam 1px
+    ctx.strokeStyle  = col;
+    ctx.lineWidth    = 1;
+    ctx.shadowColor  = col;
+    ctx.shadowBlur   = hasSpd ? 5 : 2;
+    _drawBrackets(bx, by, bw, bh, armX, armY);
+    ctx.stroke();
+
+    ctx.restore();
+
+    // ── Label top-left ─────────────────────────────────────────────────
+    const lbl = `${label} #${id}`;
+    ctx.save();
+    ctx.font = '6.5px monospace';
+    const tw  = ctx.measureText(lbl).width;
+    const lh  = 9;
+    // Latar solid hitam → teks terbaca di background apapun
+    ctx.fillStyle = 'rgba(0,0,0,0.82)';
+    ctx.fillRect(bx, by - lh, tw + 5, lh);
+    ctx.fillStyle    = col;
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(lbl, bx + 2.5, by - 1.5);
+    ctx.restore();
+
+    // ── Speed badge bottom-right (hanya jika ada speed) ────────────────
+    if (hasSpd) {
+      const spd = kmh.toFixed(0) + ' km/h';
+      ctx.save();
+      ctx.font = '6.5px monospace';
+      const sw2 = ctx.measureText(spd).width;
+      const bh2 = 9;
+      ctx.fillStyle = 'rgba(0,0,0,0.82)';
+      ctx.fillRect(bx + bw - sw2 - 5, by + bh, sw2 + 4, bh2);
+      ctx.fillStyle    = COL_B;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(spd, bx + bw - sw2 - 3, by + bh + bh2 - 1.5);
+      ctx.restore();
+    }
+  });
+}
+
+// Gambar 4 corner bracket (L-shape di setiap sudut)
+function _drawBrackets(x, y, w, h, ax, ay) {
+  const px2 = v => Math.round(v) + 0.5;
+  const x0 = px2(x),     y0 = px2(y);
+  const x1 = px2(x + w), y1 = px2(y + h);
+  ax = Math.round(ax); ay = Math.round(ay);
+
+  ctx.beginPath();
+  // atas-kiri
+  ctx.moveTo(x0 + ax, y0); ctx.lineTo(x0, y0); ctx.lineTo(x0, y0 + ay);
+  // atas-kanan
+  ctx.moveTo(x1 - ax, y0); ctx.lineTo(x1, y0); ctx.lineTo(x1, y0 + ay);
+  // bawah-kiri
+  ctx.moveTo(x0, y1 - ay); ctx.lineTo(x0, y1); ctx.lineTo(x0 + ax, y1);
+  // bawah-kanan
+  ctx.moveTo(x1, y1 - ay); ctx.lineTo(x1, y1); ctx.lineTo(x1 - ax, y1);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  LINE DRAWING (mouse + touch)
+// ════════════════════════════════════════════════════════════════
+function evtPos(e) {
+  const rect = stage.getBoundingClientRect();
+  const src  = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function setDrawMode(mode) {
+  drawMode = mode;
+  drawStart = drawLive = null;
+  btnDrawA.classList.toggle('active', mode === 'A');
+  btnDrawB.classList.toggle('active', mode === 'B');
+  drawOverlay.classList.toggle('hidden', !mode);
+  if (mode) drawOvLabel.textContent = `Menggambar Garis ${mode} — klik &amp; seret`;
+  cvs.style.cursor = mode ? 'crosshair' : 'default';
+  renderScene();
+}
+
+cvs.addEventListener('mousedown',  onDown);
+cvs.addEventListener('mousemove',  onMove);
+cvs.addEventListener('mouseup',    onUp);
+cvs.addEventListener('mouseleave', onLeave);
+cvs.addEventListener('touchstart', e => { e.preventDefault(); onDown(e); }, { passive: false });
+cvs.addEventListener('touchmove',  e => { e.preventDefault(); onMove(e); }, { passive: false });
+cvs.addEventListener('touchend',   e => { e.preventDefault(); onUp(e);   }, { passive: false });
+
+function onDown(e) {
+  if (!drawMode) return;
+  drawStart = evtPos(e); drawLive = { ...drawStart };
+}
+function onMove(e) {
+  if (!drawMode || !drawStart) return;
+  drawLive = evtPos(e);
+  renderScene();
+}
+function onUp(e) {
+  if (!drawMode || !drawStart) return;
+  const end = evtPos(e);
+  const dx = end.x - drawStart.x, dy = end.y - drawStart.y;
+  if (Math.hypot(dx, dy) >= MIN_DRAG_PX) {
+    lines[drawMode] = { x1: drawStart.x, y1: drawStart.y, x2: end.x, y2: end.y };
+    setLineStatus(drawMode, true);
+    log(`Garis ${drawMode} digambar.`);
+  }
+  drawStart = drawLive = null;
+  setDrawMode(null);
+}
+function onLeave() {
+  if (!drawStart) return;
+  drawStart = drawLive = null;
+  renderScene();
+}
+
+function setLineStatus(key, drawn) {
+  const el = key === 'A' ? stA : stB;
+  el.textContent = drawn ? '✓' : '–';
+  el.style.color = drawn ? '#b2ff59' : '#555';
+}
+
+btnDrawA.addEventListener('click', () => setDrawMode(drawMode === 'A' ? null : 'A'));
+btnDrawB.addEventListener('click', () => setDrawMode(drawMode === 'B' ? null : 'B'));
+btnClear.addEventListener('click', () => {
+  lines.A = lines.B = null;
+  setLineStatus('A', false); setLineStatus('B', false);
+  setDrawMode(null);
+  log('Garis dihapus.');
+});
+
+// ════════════════════════════════════════════════════════════════
+//  SPEED PANEL
+// ════════════════════════════════════════════════════════════════
+function updateSpeedPanel(all) {
+  const entries = Object.entries(all);
+  if (!entries.length) return;
+  const MAX_KMH = 150;
+  speedPanel.innerHTML = entries.map(([id, spd]) => {
+    const kmh = (spd * 3.6);
+    const bar = Math.min(100, kmh / MAX_KMH * 100).toFixed(1);
+    const col = kmh < 40 ? '#b2ff59' : kmh < 80 ? '#ffeb3b' : '#ff5252';
+    return `<div class="sr">
+      <span class="sr-id">#${id}</span>
+      <div class="sr-bar-wrap"><div class="sr-bar" style="width:${bar}%;background:${col}"></div></div>
+      <span class="sr-val" style="color:${col}">${kmh.toFixed(0)}</span>
+      <span class="sr-unit">km/h</span>
+    </div>`;
+  }).join('');
+}
+
+btnReset.addEventListener('click', async () => {
+  speedPanel.innerHTML = '<div class="speed-empty"><i class="bi bi-hourglass-split"></i> Di-reset.</div>';
+  await fetch('/object-tracker/api/reset', { method: 'POST' });
+  log('Tracker di-reset.');
+});
+
+// ════════════════════════════════════════════════════════════════
+//  LOG
+// ════════════════════════════════════════════════════════════════
+function log(msg) {
+  const t = new Date().toLocaleTimeString('id-ID');
+  const d = document.createElement('div');
+  d.className = 'log-row';
+  d.innerHTML = `<span class="lt">${t}</span>${msg}`;
+  logEl.prepend(d);
+  if (logEl.children.length > 50) logEl.lastChild.remove();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════
+renderScene();
+</script>
+
+<!-- ═════════════════════════════════════ STYLES -->
+<style>
+/* ── RESET / BASE ───────────────────────────────────── */
+.hidden { display: none !important; }
+.w-full { width: 100%; }
+.mt-2   { margin-top: .5rem; }
+
+/* ── TOP BAR ────────────────────────────────────────── */
+.ot-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1rem; gap: .5rem; flex-wrap: wrap;
+}
+.ot-topbar-left { display: flex; align-items: center; gap: .5rem; }
+.ot-page-title  { font-size: 1.2rem; font-weight: 700; color: #dde2ef; }
+.ot-icon-accent { color: #00e5ff; font-size: 1.3rem; }
+.ot-topbar-right{ display: flex; gap: .5rem; align-items: center; }
+
+.ot-chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .28rem .75rem; border-radius: 999px;
+  font-size: .74rem; font-weight: 600; cursor: pointer;
+  transition: background .2s;
+}
+.ot-chip-idle { background: #1e2230; color: #6b7a9a; border: 1px solid #2a3045; }
+.ot-chip-ok   { background: #0b2d1a; color: #b2ff59; border: 1px solid #2e7d32; }
+.ot-chip-warn { background: #2d1a0b; color: #ffb74d; border: 1px solid #b05a00; }
+.ot-chip-dim  { background: #13151f; color: #4a5068; border: 1px solid #1e2230; cursor: default; }
+.ot-chip-dot  { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* ── LAYOUT ─────────────────────────────────────────── */
+.ot-layout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 860px) { .ot-layout { grid-template-columns: 1fr; } }
+
+/* ── VIDEO PANEL ────────────────────────────────────── */
+.ot-video-col { display: flex; flex-direction: column; gap: .5rem; }
+
+.ot-stage {
+  position: relative;
+  background: #000;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #1e2230;
+  line-height: 0;
+}
+.ot-stage video { width: 100%; display: block; }
+.ot-stage canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+}
+
+/* Draw overlay hint */
+.draw-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35); pointer-events: none;
+}
+.draw-overlay-inner {
+  display: flex; align-items: center; gap: .5rem;
+  background: rgba(0,0,0,.7); color: #00e5ff;
+  padding: .45rem 1rem; border-radius: 8px;
+  font-size: .82rem; border: 1px solid #00e5ff44;
+}
+
+/* Stage controls (play/pause) */
+.stage-controls {
+  position: absolute; bottom: .5rem; right: .5rem;
+  display: flex; gap: .35rem;
+}
+.stage-btn {
+  background: rgba(0,0,0,.6); border: 1px solid rgba(255,255,255,.15);
+  color: #dde; border-radius: 6px; padding: .3rem .55rem;
+  font-size: .9rem; cursor: pointer; transition: background .15s;
+  line-height: 1;
+}
+.stage-btn:hover { background: rgba(0,0,0,.85); }
+
+/* Progress bar */
+.ot-progress-wrap {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .15rem 0;
+}
+.ot-progress-bar {
+  flex: 1; height: 4px; background: #1e2230; border-radius: 4px;
+  cursor: pointer; overflow: hidden;
+}
+.ot-progress-fill { height: 100%; background: #00e5ff; transition: width .3s linear; }
+.ot-progress-time { font-size: .72rem; color: #6b7a9a; white-space: nowrap; }
+
+/* ── TOOLBAR ────────────────────────────────────────── */
+.ot-toolbar {
+  background: #0e1018;
+  border: 1px solid #1e2230;
+  border-radius: 8px;
+  padding: .65rem;
+  display: flex; flex-direction: column; gap: .55rem;
+}
+
+.ot-tab-group { display: flex; gap: .3rem; }
+.ot-tab {
+  padding: .3rem .7rem; border-radius: 6px; border: 1px solid #1e2230;
+  background: transparent; color: #6b7a9a; font-size: .76rem;
+  cursor: pointer; transition: all .15s;
+}
+.ot-tab.active { background: #1a2030; color: #dde2ef; border-color: #2e3a55; }
+.ot-tab:hover:not(.active) { color: #9ba8c4; }
+
+.ot-tabcontent {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+}
+
+.ot-url-row {
+  display: flex; gap: .4rem; flex: 1; min-width: 0;
+}
+.ot-url-input {
+  flex: 1; background: #0a0c14; border: 1px solid #2a3045; border-radius: 6px;
+  color: #dde2ef; padding: .35rem .65rem; font-size: .78rem; outline: none;
+  min-width: 0;
+}
+.ot-url-input:focus { border-color: #00e5ff66; }
+.ot-url-status { font-size: .75rem; margin-top: .2rem; width: 100%; }
+.status-loading { color: #ffb74d; }
+.status-ok      { color: #b2ff59; }
+.status-error   { color: #ff5252; }
+
+.ot-file-name { font-size: .75rem; color: #6b7a9a; flex: 1; min-width: 0;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+
+/* ── BUTTONS ────────────────────────────────────────── */
+.ot-btn {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .35rem .75rem; border-radius: 7px; border: none;
+  font-size: .78rem; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: filter .12s, opacity .12s;
+}
+.ot-btn:disabled { opacity: .3; cursor: not-allowed; }
+.ot-btn:not(:disabled):hover { filter: brightness(1.18); }
+
+.btn-green  { background: #152d1c; color: #b2ff59; border: 1px solid #2e7d32; }
+.btn-red    { background: #2d1515; color: #ff6b6b; border: 1px solid #b71c1c; }
+.btn-blue   { background: #0d2040; color: #82b1ff; border: 1px solid #1a4a9a; }
+.btn-cyan   { background: #012830; color: #00e5ff; border: 1px solid #006e8a; }
+.btn-ghost  { background: transparent; color: #6b7a9a; border: 1px solid #1e2230; }
+.btn-ghost:not(:disabled):hover { color: #ff5252; border-color: #ff5252; }
+
+/* ── SIDEBAR ────────────────────────────────────────── */
+.ot-sidebar { display: flex; flex-direction: column; gap: .65rem; }
+
+.ot-card {
+  background: #0e1018; border: 1px solid #1e2230;
+  border-radius: 9px; padding: .85rem .9rem;
+}
+.ot-card-flex { flex: 1; }
+.ot-card-head {
+  font-size: .73rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: #4a5570; margin: 0 0 .7rem;
+  display: flex; align-items: center; gap: .35rem;
+}
+.ot-card-head-row {
+  display: flex; align-items: center; margin-bottom: .7rem;
+}
+.ot-card-head-row .ot-card-head { margin: 0; flex: 1; }
+.ot-icon-btn {
+  background: transparent; border: none; color: #4a5570;
+  cursor: pointer; font-size: .9rem; transition: color .15s;
+}
+.ot-icon-btn:hover { color: #ff5252; }
+
+.ot-note {
+  font-size: .71rem; color: #3a4255; margin: .5rem 0 0; line-height: 1.55;
+}
+
+/* ── LINE BUTTONS ───────────────────────────────────── */
+.ot-line-btns { display: flex; flex-direction: column; gap: .4rem; }
+.ot-line-btn {
+  display: flex; align-items: center; gap: .45rem;
+  padding: .45rem .7rem; border-radius: 7px;
+  background: #13151f; border: 1px solid #1e2230;
+  color: #aab; font-size: .78rem; cursor: pointer;
+  transition: border-color .15s, background .15s; text-align: left;
+}
+.ot-line-btn:hover { background: #181b28; }
+.ot-line-btn.active { border-color: #00e5ff; background: #061520; color: #00e5ff; }
+
+.ldot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.ldot-a { background: #00e5ff; box-shadow: 0 0 5px #00e5ff; }
+.ldot-b { background: #ff6b35; box-shadow: 0 0 5px #ff6b35; }
+.lname  { flex: 1; }
+.lstatus { font-size: .7rem; color: #555; }
+
+/* ── INPUT ──────────────────────────────────────────── */
+.ot-field {
+  display: flex; align-items: center;
+  background: #080a10; border: 1px solid #1e2230; border-radius: 7px;
+  overflow: hidden;
+}
+.ot-input {
+  flex: 1; background: transparent; border: none;
+  color: #dde2ef; padding: .4rem .65rem; font-size: .85rem; outline: none;
+}
+.ot-unit {
+  padding: 0 .65rem; color: #4a5570; font-size: .75rem;
+  background: #0d0f18; align-self: stretch;
+  display: flex; align-items: center;
+}
+
+/* ── SPEED PANEL ────────────────────────────────────── */
+.speed-panel {
+  min-height: 80px; max-height: 180px; overflow-y: auto;
+}
+.speed-empty {
+  text-align: center; color: #2d3448;
+  font-size: .75rem; padding: 1.2rem 0; line-height: 1.7;
+}
+.sr {
+  display: grid; grid-template-columns: 28px 1fr 32px 36px;
+  align-items: center; gap: .4rem;
+  padding: .28rem 0; border-bottom: 1px solid #13151f;
+}
+.sr-id   { font-size: .72rem; color: #4a5570; font-family: monospace; }
+.sr-bar-wrap { background: #13151f; border-radius: 3px; height: 5px; overflow: hidden; }
+.sr-bar  { height: 100%; border-radius: 3px; transition: width .4s ease; }
+.sr-val  { font-size: .8rem; font-weight: 700; text-align: right; }
+.sr-unit { font-size: .62rem; color: #4a5570; }
+
+/* ── LOG ────────────────────────────────────────────── */
+.ot-log {
+  background: #080a10; border: 1px solid #13151f;
+  border-radius: 6px; padding: .4rem .6rem;
+  max-height: 120px; overflow-y: auto;
+  font-size: .7rem; color: #4a5570;
+}
+.log-row { padding: .18rem 0; border-bottom: 1px solid #0d0f18; }
+.lt      { color: #2d3448; margin-right: .4rem; font-family: monospace; }
+
+/* ── URL stream tab (block layout) ─────────────────── */
+.ot-tabcontent-block {
+  display: flex; flex-direction: column; gap: .45rem;
+}
+.ot-tabcontent-block.hidden { display: none !important; }
+
+/* ── COOKIES PANEL ──────────────────────────────────── */
+.cookies-panel {
+  background: #0a0c14;
+  border: 1px solid #1e2230;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.cookies-summary {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .45rem .7rem;
+  cursor: pointer; list-style: none;
+  font-size: .78rem; color: #6b7a9a;
+  user-select: none;
+}
+.cookies-summary::-webkit-details-marker { display: none; }
+.cookies-summary:hover { color: #9ba8c4; }
+.cookies-summary i { font-size: .85rem; }
+
+.ck-badge {
+  margin-left: auto;
+  padding: .1rem .55rem; border-radius: 999px;
+  font-size: .68rem; font-weight: 700;
+}
+.ck-none { background: #1a1d2a; color: #4a5570; }
+.ck-ok   { background: #0b2d1a; color: #b2ff59; border: 1px solid #2e7d32; }
+
+.cookies-body {
+  padding: .6rem .85rem .75rem;
+  border-top: 1px solid #1e2230;
+}
+.ck-info {
+  font-size: .74rem; color: #5a6480; margin: 0 0 .6rem; line-height: 1.5;
+}
+.ck-step {
+  display: flex; gap: .5rem; align-items: flex-start;
+  font-size: .74rem; color: #7a8aaa; margin-bottom: .4rem; line-height: 1.5;
+}
+.ck-num {
+  flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%;
+  background: #1e2230; color: #9ba8c4;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .68rem; font-weight: 700; margin-top: 1px;
+}
+.ck-link {
+  color: #00e5ff; text-decoration: none;
+}
+.ck-link:hover { text-decoration: underline; }
+.ck-actions {
+  display: flex; gap: .4rem; margin-top: .65rem; flex-wrap: wrap;
+}
+code {
+  background: #13151f; color: #b2ff59;
+  padding: .05rem .35rem; border-radius: 3px; font-size: .72rem;
+}
+</style>
+
+{% endblock %}

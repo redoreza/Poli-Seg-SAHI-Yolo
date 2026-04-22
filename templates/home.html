@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<!-- Flash messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<p>Selamat datang di POLI-SEG ini adalah Prototype.</p>
+
+<hr>
+
+<h2>Upload Model YOLO (.pt)</h2>
+
+<form method="POST" enctype="multipart/form-data" class="mb-4" novalidate>
+    <div class="mb-3">
+        <label for="modelFile" class="form-label">Pilih File Model (.pt)</label>
+        <input type="file" name="model_file" id="modelFile" accept=".pt" required class="form-control" onchange="showFileName()" aria-describedby="fileHelp">
+        <div id="fileHelp" class="form-text">Format file harus berekstensi .pt</div>
+        <div id="fileName" class="form-text mt-1 text-truncate" style="max-width: 400px;"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Upload dan Aktifkan Model</button>
+</form>
+
+<script>
+    function showFileName() {
+        const input = document.getElementById('modelFile');
+        const fileNameDiv = document.getElementById('fileName');
+        if (input.files.length > 0) {
+            fileNameDiv.textContent = `File dipilih: ${input.files[0].name}`;
+        } else {
+            fileNameDiv.textContent = '';
+        }
+    }
+</script>
+
+<hr>
+
+<h3>Model Aktif Saat Ini: <strong>{{ active_model if active_model else "Tidak ada model aktif" }}</strong></h3>
+
+{% if class_labels %}
+<div class="mb-3">
+    <label class="form-label">Daftar Class Label pada Model:</label>
+    <ul class="list-group" style="max-width: 400px; overflow-y: auto; max-height: 200px;">
+        {% for label in class_labels %}
+        <li class="list-group-item py-1">{{ label }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% else %}
+<p><em>Tidak ada class label yang tersedia.</em></p>
+{% endif %}
+
+<form action="{{ url_for('main.reload_active_model') }}" method="get" style="display: inline;">
+    <button type="submit" class="btn btn-warning mb-3" title="Reload model aktif agar perubahan diterapkan">
+        <i class="bi bi-arrow-clockwise"></i> Reload Model Aktif
+    </button>
+</form>
+
+<hr>
+
+<h3>Daftar Model di Server</h3>
+
+<table class="table table-striped table-bordered align-middle table-responsive">
+    <thead class="table-light">
+        <tr>
+            <th>Nama File Model</th>
+            <th>Status</th>
+            <th style="width: 200px;">Aksi</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% if model_files %}
+        {% for m in model_files %}
+        <tr>
+            <td class="text-truncate" style="max-width: 400px;">{{ m }}</td>
+            <td>
+                {% if m == active_model %}
+                <span class="badge bg-success">Aktif</span>
+                {% else %}
+                <span class="badge bg-secondary">Tidak Aktif</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if m != active_model %}
+                <a href="{{ url_for('main.activate_model', filename=m) }}" class="btn btn-sm btn-primary me-2" title="Aktifkan model ini">Aktifkan</a>
+                {% else %}
+                <button class="btn btn-sm btn-primary me-2" disabled title="Model sudah aktif">Aktifkan</button>
+                {% endif %}
+                <a href="{{ url_for('main.delete_model', filename=m) }}"
+                   class="btn btn-sm btn-danger"
+                   onclick="return confirm('Yakin ingin menghapus model {{ m }}?')"
+                   title="Hapus model ini">Hapus</a>
+            </td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr>
+            <td colspan="3" class="text-center">Tidak ada model tersedia.</td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>
+
+{% endblock %}

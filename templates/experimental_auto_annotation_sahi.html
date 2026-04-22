@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>{{ title }}</h2>
+
+<form method="POST" enctype="multipart/form-data" action="{{ url_for('experimental_sahi.auto_annotation_sahi') }}">
+    <div class="mb-3">
+        <label for="fileInput" class="form-label">Pilih File Gambar atau Video</label>
+        <input type="file" name="file" id="fileInput" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+        <label for="fpsSample" class="form-label">Frame Per Detik (FPS) Sampling untuk Video</label>
+        <input type="number" step="0.1" min="0.1" max="30" name="fps_sample" id="fpsSample" value="2" class="form-control">
+        <small class="form-text text-muted">Contoh: 2 berarti mengambil 2 frame per detik dari video.</small>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Persentase Pembagian Dataset (%)</label>
+        <div class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label for="trainSplit" class="col-form-label">Train</label>
+            </div>
+            <div class="col-auto">
+                <input type="number" id="trainSplit" class="form-control" value="70" min="0" max="100" required>
+            </div>
+            <div class="col-auto">
+                <label for="valSplit" class="col-form-label">Validation</label>
+            </div>
+            <div class="col-auto">
+                <input type="number" id="valSplit" class="form-control" value="20" min="0" max="100" required>
+            </div>
+            <div class="col-auto">
+                <label for="testSplit" class="col-form-label">Test</label>
+            </div>
+            <div class="col-auto">
+                <input type="number" id="testSplit" class="form-control" value="10" min="0" max="100" required>
+            </div>
+        </div>
+        <small id="splitErrorMsg" class="text-danger" style="display:none;">Total persentase harus 100%</small>
+    </div>
+
+    <!-- Hidden inputs untuk rasio split dalam bentuk desimal -->
+    <input type="hidden" name="train_ratio" id="trainRatioInput" value="0.7">
+    <input type="hidden" name="val_ratio" id="valRatioInput" value="0.2">
+    <input type="hidden" name="test_ratio" id="testRatioInput" value="0.1">
+
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="enablePolygonMerge" name="enable_polygon_merge" value="1">
+        <label class="form-check-label" for="enablePolygonMerge">Aktifkan Polygon Merging (Union)</label>
+    </div>
+
+    <!-- Kontrol NMS baru -->
+    <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="enablePolygonNMS" name="enable_polygon_nms" value="1">
+        <label class="form-check-label" for="enablePolygonNMS">Aktifkan Non-Maximum Suppression untuk Poligon</label>
+    </div>
+
+    <div class="mb-3">
+        <label for="iouThreshold" class="form-label">Ambang Batas IoU untuk NMS</label>
+        <input type="number" step="0.05" min="0" max="1" name="iou_threshold" id="iouThreshold" value="0.5" class="form-control">
+    </div>
+
+    <button type="submit" id="submitBtn" class="btn btn-primary">Proses Auto Annotation</button>
+</form>
+
+<script>
+    const trainSplitInput = document.getElementById('trainSplit');
+    const valSplitInput = document.getElementById('valSplit');
+    const testSplitInput = document.getElementById('testSplit');
+    const splitErrorMsg = document.getElementById('splitErrorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    const trainRatioInput = document.getElementById('trainRatioInput');
+    const valRatioInput = document.getElementById('valRatioInput');
+    const testRatioInput = document.getElementById('testRatioInput');
+
+    function updateRatios() {
+        const train = parseFloat(trainSplitInput.value) || 0;
+        const val = parseFloat(valSplitInput.value) || 0;
+        const test = parseFloat(testSplitInput.value) || 0;
+        const total = train + val + test;
+
+        if (total !== 100) {
+            splitErrorMsg.style.display = 'block';
+            submitBtn.disabled = true;
+        } else {
+            splitErrorMsg.style.display = 'none';
+            submitBtn.disabled = false;
+            trainRatioInput.value = (train / 100).toFixed(3);
+            valRatioInput.value = (val / 100).toFixed(3);
+            testRatioInput.value = (test / 100).toFixed(3);
+        }
+    }
+
+    trainSplitInput.addEventListener('input', updateRatios);
+    valSplitInput.addEventListener('input', updateRatios);
+    testSplitInput.addEventListener('input', updateRatios);
+
+    updateRatios();
+</script>
+
+{% endblock %}

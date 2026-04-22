@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Object Tracker dengan Instant Segmentation</h2>
+
+<p>Model aktif: <span id="modelPath">{{ model_path }}</span></p>
+
+<div class="form-check form-switch mb-3">
+    <input class="form-check-input" type="checkbox" id="toggleSegmentation" checked>
+    <label class="form-check-label" for="toggleSegmentation">Aktifkan Instant Segmentation</label>
+</div>
+
+<div>
+    <button id="btnStart" class="btn btn-success">Start Kamera</button>
+    <button id="btnStop" class="btn btn-danger" disabled>Stop Kamera</button>
+</div>
+
+<div style="position: relative; max-width: 800px; margin-top: 20px;">
+    <video id="video" autoplay muted playsinline
+           style="width: 100%; border: 2px solid #333; border-radius: 4px;"></video>
+    <canvas id="canvasMask" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <canvas id="canvasBox" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const video = document.getElementById('video');
+        const canvasMask = document.getElementById('canvasMask');
+        const ctxMask = canvasMask.getContext('2d');
+        const canvasBox = document.getElementById('canvasBox');
+        const ctxBox = canvasBox.getContext('2d');
+        const btnStart = document.getElementById('btnStart');
+        const btnStop = document.getElementById('btnStop');
+        const toggleSeg = document.getElementById('toggleSegmentation');
+        const modelPathSpan = document.getElementById('modelPath');
+
+        let stream = null;
+        let frameInterval = null;
+        let cameraSettings = null;
+
+        function syncCanvasSize() {
+            if (video.videoWidth && video.videoHeight) {
+                [canvasMask, canvasBox].forEach(c => {
+                    c.width = video.videoWidth;
+                    c.height = video.videoHeight;
+                    c.style.width = video.clientWidth + 'px';
+                    c.style.height = video.clientHeight + 'px';
+                });
+            }
+        }
+
+        video.onloadedmetadata = () => {
+            syncCanvasSize();
+        };
+
+        if ('ResizeObserver' in window) {
+            new ResizeObserver(syncCanvasSize).observe(video);
+        } else {
+            window.addEventListener('resize', syncCanvasSize);
+        }
+
+        async function loadCameraSettings() {
+            try {
+                const res = await fetch('/setting/api/get-camera-setting');
+                if (!res.ok) throw new Error(res.statusText);
+                const data = await res.json();
+                cameraSettings = data;
+            } catch (e) {
+                console.error('Gagal load pengaturan kamera:', e);
+                cameraSettings = null;
+            }
+        }
+
+        async function sendFrame() {
+            if (video.readyState < 2) return;
+
+            const captureCanvas = document.createElement('canvas');
+            const captureCtx = captureCanvas.getContext('2d');
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            captureCanvas.width = w;
+            captureCanvas.height = h;
+            captureCtx.drawImage(video, 0, 0, w, h);
+
+            const base64data = captureCanvas.toDataURL('image/jpeg', 0.7);
+            const enableSegmentation = toggleSeg.checked;
+
+            const payload = {
+                image: base64data,
+                enable_segmentation: enableSegmentation,
+            };
+
+            try {
+                const response = await fetch('/api/track-segmentation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    console.error('Tracking error', response.statusText);
+                    return;
+                }
+
+                const data = await response.json();
+
+                modelPathSpan.textContent = data.model_path || 'Model tidak tersedia';
+
+                ctxMask.clearRect(0, 0, canvasMask.width, canvasMask.height);
+                ctxBox.clearRect(0, 0, canvasBox.width, canvasBox.height);
+
+                // Render mask patch di posisi patch asli
+                if (data.masks && data.masks.length > 0) {
+                    data.masks.forEach(({ mask_b64, x1, y1, width, height }) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const scaleX = canvasMask.width / video.videoWidth;
+                            const scaleY = canvasMask.height / video.videoHeight;
+
+                            ctxMask.globalAlpha = 0.5;
+                            ctxMask.drawImage(
+                                img,
+                                x1 * scaleX,
+                                y1 * scaleY,
+                                width * scaleX,
+                                height * scaleY
+                            );
+                            ctxMask.globalAlpha = 1.0;
+                        };
+                        img.src = mask_b64;
+                    });
+                }
+
+                // Render bounding boxes dan label
+                const scaleX = canvasBox.width / video.videoWidth;
+                const scaleY = canvasBox.height / video.videoHeight;
+
+                data.boxes.forEach(box => {
+                    const x = box.x * scaleX;
+                    const y = box.y * scaleY;
+                    const width = box.width * scaleX;
+                    const height = box.height * scaleY;
+
+                    ctxBox.strokeStyle = 'lime';
+                    ctxBox.lineWidth = 2;
+                    ctxBox.font = '16px Arial';
+                    ctxBox.fillStyle = 'lime';
+                    ctxBox.textBaseline = 'top';
+
+                    ctxBox.strokeRect(x, y, width, height);
+
+                    const label = `${box.label} ID:${box.id}`;
+                    const textWidth = ctxBox.measureText(label).width;
+                    ctxBox.fillRect(x, y, textWidth + 6, 18);
+                    ctxBox.fillStyle = 'black';
+                    ctxBox.fillText(label, x + 3, y + 1);
+                });
+
+            } catch (e) {
+                console.error('Error in sendFrame:', e);
+            }
+        }
+
+        btnStart.addEventListener('click', async () => {
+            await loadCameraSettings();
+
+            try {
+                const constraints = {
+                    video: {
+                        deviceId: cameraSettings && cameraSettings.selected_camera ? { exact: cameraSettings.selected_camera } : undefined,
+                        width: cameraSettings && cameraSettings.camera_width ? { ideal: cameraSettings.camera_width } : { ideal: 640 },
+                        height: cameraSettings && cameraSettings.camera_height ? { ideal: cameraSettings.camera_height } : { ideal: 480 },
+                    },
+                };
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+
+                frameInterval = setInterval(sendFrame, 200);
+            } catch (e) {
+                alert('Gagal akses kamera: ' + e.message);
+            }
+        });
+
+        btnStop.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+            clearInterval(frameInterval);
+        });
+    });
+</script>
+
+<style>
+    .video-container {
+        position: relative;
+        max-width: 800px;
+        margin: 20px auto;
+    }
+
+    video#video {
+        width: 100%;
+        border: 2px solid #333;
+        border-radius: 4px;
+    }
+
+    canvas#canvasMask,
+    canvas#canvasBox {
+        position: absolute;
+        top: 0;
+        left: 0;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}

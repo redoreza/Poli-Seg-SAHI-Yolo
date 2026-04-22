@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Segmentation - Multiple File Upload</h2>
+
+<div class="mb-3">
+    <label for="fileInput" class="form-label">Pilih file gambar (bisa lebih dari 1) atau drag & drop di area bawah:</label>
+    <input type="file" id="fileInput" accept="image/*" multiple class="form-control" />
+</div>
+
+<div id="dropZone" style="border: 2px dashed #198754; padding: 30px; text-align: center; color: #198754; cursor: pointer;">
+    Drop files here or click to select
+</div>
+
+<div id="previewArea" class="d-flex flex-wrap gap-3 mt-3"></div>
+
+<div class="mt-3">
+    <button id="uploadBtn" class="btn btn-success" disabled>Upload dan Proses</button>
+    <button id="downloadZipBtn" class="btn btn-primary" disabled>Download Selected as ZIP</button>
+    <button id="deleteBtn" class="btn btn-danger" disabled>Hapus Selected</button>
+</div>
+
+<div class="mt-3">
+    <div class="progress" style="height: 25px; display:none;">
+        <div id="uploadProgress" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+             style="width: 0%"></div>
+    </div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const previewArea = document.getElementById('previewArea');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const downloadZipBtn = document.getElementById('downloadZipBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const progressBar = document.querySelector('.progress');
+    const progressFill = document.getElementById('uploadProgress');
+
+    let selectedFiles = [];
+    let uploadedFiles = [];
+
+    function updateButtonsState() {
+        uploadBtn.disabled = selectedFiles.length === 0;
+        downloadZipBtn.disabled = !uploadedFiles.some(f => f.selected);
+        deleteBtn.disabled = !uploadedFiles.some(f => f.selected);
+    }
+
+    function createThumbnail(fileName, url, isResult = false) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'border p-2 position-relative';
+        wrapper.style.width = '150px';
+        wrapper.style.cursor = 'pointer';
+
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = fileName;
+        img.style.width = '100%';
+        img.style.height = '100px';
+        img.style.objectFit = 'cover';
+
+        const label = document.createElement('div');
+        label.className = 'text-truncate mt-1';
+        label.style.fontSize = '0.85rem';
+        label.textContent = fileName;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.style.position = 'absolute';
+        checkbox.style.top = '5px';
+        checkbox.style.right = '5px';
+
+        checkbox.addEventListener('change', () => {
+            if (isResult) {
+                const fileObj = uploadedFiles.find(f => f.filename === fileName);
+                if (fileObj) {
+                    fileObj.selected = checkbox.checked;
+                    updateButtonsState();
+                }
+            }
+        });
+
+        wrapper.appendChild(img);
+        wrapper.appendChild(label);
+        if (isResult) wrapper.appendChild(checkbox);
+
+        previewArea.appendChild(wrapper);
+
+        return wrapper;
+    }
+
+    fileInput.addEventListener('change', () => {
+        previewArea.innerHTML = '';
+        selectedFiles = Array.from(fileInput.files);
+        selectedFiles.forEach(f => {
+            const url = URL.createObjectURL(f);
+            createThumbnail(f.name, url, false);
+        });
+        updateButtonsState();
+    });
+
+    dropZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        dropZone.style.backgroundColor = '#d1e7dd';
+    });
+
+    dropZone.addEventListener('dragleave', e => {
+        dropZone.style.backgroundColor = 'transparent';
+    });
+
+    dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.style.backgroundColor = 'transparent';
+
+        const dtFiles = e.dataTransfer.files;
+        if (dtFiles.length) {
+            let newFiles = Array.from(dtFiles);
+            newFiles = newFiles.filter(nf => !selectedFiles.some(sf => sf.name === nf.name));
+            selectedFiles = selectedFiles.concat(newFiles);
+
+            previewArea.innerHTML = '';
+            selectedFiles.forEach(f => {
+                const url = URL.createObjectURL(f);
+                createThumbnail(f.name, url, false);
+            });
+            updateButtonsState();
+        }
+    });
+
+    uploadBtn.addEventListener('click', () => {
+        if (selectedFiles.length === 0) return;
+
+        progressBar.style.display = 'block';
+        progressFill.style.width = '0%';
+
+        const formData = new FormData();
+        selectedFiles.forEach(f => formData.append('images', f));
+
+        fetch('/segmentation/image/upload', {
+            method: 'POST',
+            body: formData
+        }).then(resp => resp.json())
+          .then(data => {
+              if (data.error) {
+                  alert(data.error);
+                  return;
+              }
+
+              previewArea.innerHTML = '';
+              uploadedFiles = data.uploaded_files.map(f => ({ ...f, selected: false }));
+
+              uploadedFiles.forEach(f => {
+                  createThumbnail(f.filename, f.result_url, true);
+              });
+
+              selectedFiles = [];
+              fileInput.value = null;
+              updateButtonsState();
+              progressBar.style.display = 'none';
+              alert('Upload dan proses selesai!');
+          })
+          .catch(e => {
+              alert('Error upload: ' + e);
+              progressBar.style.display = 'none';
+          });
+    });
+
+    downloadZipBtn.addEventListener('click', () => {
+        const filesToDownload = uploadedFiles.filter(f => f.selected).map(f => f.filename);
+        if (filesToDownload.length === 0) {
+            alert('Pilih minimal satu file untuk download.');
+            return;
+        }
+
+        fetch('/segmentation/image/download-zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: filesToDownload })
+        })
+        .then(resp => {
+            if (resp.ok) return resp.blob();
+            else throw new Error('Gagal download ZIP');
+        })
+        .then(blob => {
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'segmentation_results.zip';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        })
+        .catch(e => alert(e));
+    });
+
+    deleteBtn.addEventListener('click', () => {
+        const filesToDelete = uploadedFiles.filter(f => f.selected).map(f => f.filename);
+        if (filesToDelete.length === 0) {
+            alert('Pilih minimal satu file untuk dihapus.');
+            return;
+        }
+
+        if (!confirm(`Yakin ingin menghapus ${filesToDelete.length} file?`)) return;
+
+        fetch('/segmentation/image/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: filesToDelete })
+        })
+        .then(resp => resp.json())
+        .then(data => {
+            if (data.deleted && data.deleted.length > 0) {
+                uploadedFiles = uploadedFiles.filter(f => !data.deleted.includes(f.filename));
+                previewArea.innerHTML = '';
+                uploadedFiles.forEach(f => createThumbnail(f.filename, f.result_url, true));
+                updateButtonsState();
+                alert(`Berhasil menghapus ${data.deleted.length} file.`);
+            } else {
+                alert('File yang dipilih tidak ditemukan atau gagal dihapus.');
+            }
+        })
+        .catch(e => alert('Error hapus file: ' + e));
+    });
+</script>
+
+<style>
+    #previewArea > div:hover {
+        outline: 2px solid #198754;
+    }
+</style>
+
+{% endblock %}

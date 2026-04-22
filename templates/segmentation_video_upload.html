@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Upload Video untuk Segmentation</h2>
+
+{% if error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+{% if message %}
+<div class="alert alert-success">{{ message }}</div>
+<a href="{{ result_video_url }}" download class="btn btn-primary">Download Video Hasil Segmentasi: {{ result_video_name }}</a>
+{% endif %}
+
+<form method="POST" action="{{ url_for('segmentation_video.upload_video') }}" enctype="multipart/form-data" class="mb-3">
+    <div class="mb-3">
+        <input type="file" name="video" accept="video/*" required>
+    </div>
+    <button type="submit" class="btn btn-success">Upload dan Proses</button>
+</form>
+{% endblock %}

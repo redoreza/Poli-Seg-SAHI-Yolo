@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Image Segmentation - Kamera Realtime</h2>
+
+<div class="text-center mb-3">
+    <button id="btnStart" class="btn btn-success">Start Kamera</button>
+    <button id="btnStop" class="btn btn-danger" disabled>Stop Kamera</button>
+    <button id="btnSnapshot" class="btn btn-primary" disabled>Snapshot</button>
+</div>
+
+<div class="form-check form-switch mb-3 text-center">
+    <input class="form-check-input" type="checkbox" id="toggleMask" checked>
+    <label class="form-check-label" for="toggleMask">Tampilkan Masking (Instance Segmentation)</label>
+</div>
+
+<div class="d-flex justify-content-center" style="position: relative; max-width: 100%; width: 640px; margin: auto;">
+    <video id="video" autoplay muted playsinline style="width: 100%; height: auto; border: 2px solid #333; display: block;"></video>
+    <canvas id="canvasMask" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+    <canvas id="canvasBox" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const canvasMask = document.getElementById('canvasMask');
+    const ctxMask = canvasMask.getContext('2d');
+    const canvasBox = document.getElementById('canvasBox');
+    const ctxBox = canvasBox.getContext('2d');
+
+    const btnStart = document.getElementById('btnStart');
+    const btnStop = document.getElementById('btnStop');
+    const btnSnapshot = document.getElementById('btnSnapshot');
+    const toggleMask = document.getElementById('toggleMask');
+
+    let stream = null;
+    let segmentationRunning = false;
+    let segmentationIntervalId = null;
+
+    function syncCanvasSize() {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        if (width && height) {
+            [canvasMask, canvasBox].forEach(c => {
+                c.width = width;
+                c.height = height;
+                c.style.width = video.clientWidth + "px";
+                c.style.height = video.clientHeight + "px";
+            });
+        }
+    }
+
+    if ('ResizeObserver' in window) {
+        new ResizeObserver(syncCanvasSize).observe(video);
+    } else {
+        window.addEventListener('resize', syncCanvasSize);
+    }
+
+    video.onloadedmetadata = () => {
+        syncCanvasSize();
+    };
+
+    btnStart.addEventListener('click', async () => {
+        try {
+            const response = await fetch('/setting/api/get-camera-setting');
+            const setting = await response.json();
+
+            let constraints = { video: { width: 640, height: 480 } };
+
+            if (setting.selected_camera) {
+                constraints.video.deviceId = { exact: setting.selected_camera };
+                constraints.video.width = setting.camera_width || 640;
+                constraints.video.height = setting.camera_height || 480;
+            }
+
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+                syncCanvasSize();
+            };
+
+            btnStart.disabled = true;
+            btnStop.disabled = false;
+            btnSnapshot.disabled = false;
+
+            segmentationIntervalId = setInterval(sendFrameForSegmentation, 300);
+
+        } catch (err) {
+            alert('Gagal akses kamera: ' + err);
+        }
+    });
+
+    btnStop.addEventListener('click', () => {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        ctxMask.clearRect(0, 0, canvasMask.width, canvasMask.height);
+        ctxBox.clearRect(0, 0, canvasBox.width, canvasBox.height);
+
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        btnSnapshot.disabled = true;
+
+        if (segmentationIntervalId) {
+            clearInterval(segmentationIntervalId);
+            segmentationIntervalId = null;
+        }
+        segmentationRunning = false;
+    });
+
+    btnSnapshot.addEventListener('click', () => {
+        if (!video) return;
+
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+
+        tempCanvas.width = video.videoWidth;
+        tempCanvas.height = video.videoHeight;
+
+        tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        if (toggleMask.checked) {
+            tempCtx.globalAlpha = 0.5;
+            tempCtx.drawImage(canvasMask, 0, 0, tempCanvas.width, tempCanvas.height);
+            tempCtx.globalAlpha = 1.0;
+        }
+
+        tempCtx.drawImage(canvasBox, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        const dataUrl = tempCanvas.toDataURL('image/png');
+
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = 'snapshot_segmentation_manual.png';
+        link.click();
+    });
+
+    async function sendFrameForSegmentation() {
+        if (!stream || segmentationRunning) return;
+        segmentationRunning = true;
+
+        try {
+            const captureCanvas = document.createElement('canvas');
+            const captureCtx = captureCanvas.getContext('2d');
+            const captureWidth = 320;
+            const captureHeight = 240;
+
+            captureCanvas.width = captureWidth;
+            captureCanvas.height = captureHeight;
+
+            captureCtx.drawImage(video, 0, 0, captureWidth, captureHeight);
+
+            const base64data = captureCanvas.toDataURL('image/jpeg', 0.7);
+
+            const response = await fetch('/segmentation/api/detect-frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64data })
+            });
+
+            if (!response.ok) {
+                console.error('Error respons segmentasi:', response.statusText);
+                segmentationRunning = false;
+                return;
+            }
+
+            const data = await response.json();
+
+            ctxMask.clearRect(0, 0, canvasMask.width, canvasMask.height);
+            ctxBox.clearRect(0, 0, canvasBox.width, canvasBox.height);
+
+            if (toggleMask.checked && data.masks) {
+                data.masks.forEach(maskDataUrl => {
+                    const imgMask = new Image();
+                    imgMask.onload = () => {
+                        ctxMask.globalAlpha = 0.5;
+                        ctxMask.drawImage(imgMask, 0, 0, canvasMask.width, canvasMask.height);
+                        ctxMask.globalAlpha = 1.0;
+                    };
+                    imgMask.src = maskDataUrl;
+                });
+            }
+
+            const scaleX = canvasBox.width / 320;
+            const scaleY = canvasBox.height / 240;
+
+            (data.boxes || []).forEach(box => {
+                const x = box.x * scaleX;
+                const y = box.y * scaleY;
+                const w = box.width * scaleX;
+                const h = box.height * scaleY;
+
+                ctxBox.strokeStyle = 'lime';
+                ctxBox.lineWidth = 1;
+                ctxBox.fillStyle = 'lime';
+                ctxBox.font = "12px Arial";
+                ctxBox.textBaseline = "top";
+
+                ctxBox.strokeRect(x, y, w, h);
+
+                const label = `${box.label} ${(box.confidence * 100).toFixed(1)}%`;
+                const textWidth = ctxBox.measureText(label).width;
+                const textHeight = 16;
+
+                ctxBox.fillRect(x, y, textWidth + 6, textHeight);
+
+                ctxBox.fillStyle = 'black';
+                ctxBox.fillText(label, x + 3, y + 1);
+            });
+
+        } catch (err) {
+            console.error('Error detect frame:', err);
+        }
+
+        segmentationRunning = false;
+    }
+</script>
+{% endblock %}

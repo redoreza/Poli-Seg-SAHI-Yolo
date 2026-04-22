@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Setting - Camera</h2>
+
+<p>Scan perangkat kamera yang tersedia dan pilih kamera yang ingin digunakan.</p>
+
+<button id="scanCamerasBtn" class="btn btn-primary mb-3">Scan Kamera</button>
+
+<div id="cameraList" class="d-flex flex-wrap gap-3 mb-4"></div>
+
+<form method="POST" action="{{ url_for('setting.setting_camera') }}" id="cameraForm" class="mb-4">
+    <input type="hidden" name="selected_camera" id="selectedCameraInput" required value="{{ selected_camera }}">
+    <input type="hidden" name="camera_width" id="cameraWidthInput" required value="{{ camera_width }}">
+    <input type="hidden" name="camera_height" id="cameraHeightInput" required value="{{ camera_height }}">
+
+    <h5>Pilih Resolusi Kamera:</h5>
+    <div id="resolutionOptions" class="d-flex flex-wrap gap-3 mb-3">
+        <!-- Tombol resolusi akan dibuat otomatis di JS -->
+    </div>
+
+    <button type="submit" class="btn btn-success" id="saveBtn" disabled>Simpan Pengaturan Kamera</button>
+</form>
+
+<div id="scanResult" class="mt-3"></div>
+
+<script>
+    const scanBtn = document.getElementById('scanCamerasBtn');
+    const cameraList = document.getElementById('cameraList');
+    const saveBtn = document.getElementById('saveBtn');
+    const selectedCameraInput = document.getElementById('selectedCameraInput');
+    const cameraWidthInput = document.getElementById('cameraWidthInput');
+    const cameraHeightInput = document.getElementById('cameraHeightInput');
+    const resolutionOptions = document.getElementById('resolutionOptions');
+    const scanResult = document.getElementById('scanResult');
+
+    let selectedDeviceId = selectedCameraInput.value || null;
+    let selectedResolution = {
+        width: parseInt(cameraWidthInput.value) || 640,
+        height: parseInt(cameraHeightInput.value) || 480
+    };
+
+    // Daftar pilihan resolusi yang ingin ditampilkan
+    const resolutions = [
+        { width: 320, height: 240, label: "QVGA (320x240)" },
+        { width: 640, height: 480, label: "VGA (640x480)" },
+        { width: 1280, height: 720, label: "HD (1280x720)" },
+        { width: 1600, height: 1200, label: "UXGA (1600x1200)" },
+        { width: 1920, height: 1080, label: "Full HD (1920x1080)" }
+    ];
+
+    function renderResolutionButtons() {
+        resolutionOptions.innerHTML = '';
+        resolutions.forEach(res => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-outline-primary flex-column d-flex align-items-center p-3';
+            btn.style.width = '140px';
+            btn.style.cursor = 'pointer';
+
+            btn.innerHTML = `
+                <i class="bi bi-display" style="font-size: 2.5rem;"></i>
+                <small class="mt-2 text-center">${res.label}</small>
+            `;
+
+            btn.dataset.width = res.width;
+            btn.dataset.height = res.height;
+
+            if (res.width === selectedResolution.width && res.height === selectedResolution.height) {
+                btn.classList.add('active');
+            }
+
+            btn.addEventListener('click', () => {
+                selectedResolution.width = res.width;
+                selectedResolution.height = res.height;
+                cameraWidthInput.value = res.width;
+                cameraHeightInput.value = res.height;
+                updateActiveResolutionButton();
+                validateForm();
+            });
+
+            resolutionOptions.appendChild(btn);
+        });
+    }
+
+    function updateActiveResolutionButton() {
+        resolutionOptions.querySelectorAll('button').forEach(btn => {
+            const w = parseInt(btn.dataset.width);
+            const h = parseInt(btn.dataset.height);
+            btn.classList.toggle('active', w === selectedResolution.width && h === selectedResolution.height);
+        });
+    }
+
+    function highlightSelectedCamera() {
+        cameraList.querySelectorAll('button').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.deviceId === selectedDeviceId);
+        });
+        validateForm();
+    }
+
+    function validateForm() {
+        saveBtn.disabled = !(selectedDeviceId && selectedResolution.width && selectedResolution.height);
+    }
+
+    async function scanCameras() {
+        scanResult.textContent = '';
+        cameraList.innerHTML = '';
+        saveBtn.disabled = true;
+        selectedDeviceId = null;
+        selectedCameraInput.value = '';
+
+        try {
+            // Minta akses kamera dulu supaya label device tersedia
+            await navigator.mediaDevices.getUserMedia({ video: true });
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+            if (videoDevices.length === 0) {
+                scanResult.textContent = 'Tidak ditemukan kamera pada perangkat Anda.';
+                return;
+            }
+
+            scanResult.textContent = `Ditemukan ${videoDevices.length} kamera. Klik ikon untuk memilih.`;
+
+            videoDevices.forEach((device, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-outline-primary d-flex flex-column align-items-center p-2';
+                btn.style.width = '120px';
+                btn.style.height = '120px';
+                btn.style.cursor = 'pointer';
+
+                btn.dataset.deviceId = device.deviceId;
+                btn.innerHTML = `
+                    <i class="bi bi-camera-video" style="font-size: 3rem;"></i>
+                    <small class="mt-2 text-center" style="word-break: break-word;">${device.label || 'Kamera ' + (idx + 1)}</small>
+                `;
+
+                btn.addEventListener('click', () => {
+                    selectedDeviceId = device.deviceId;
+                    selectedCameraInput.value = selectedDeviceId;
+                    highlightSelectedCamera();
+                });
+
+                cameraList.appendChild(btn);
+            });
+
+            if (selectedDeviceId) highlightSelectedCamera();
+
+        } catch (err) {
+            scanResult.textContent = `Gagal mengakses kamera: ${err.message}`;
+        }
+    }
+
+    scanBtn.addEventListener('click', e => {
+        e.preventDefault();
+        scanCameras();
+    });
+
+    window.addEventListener('load', () => {
+        renderResolutionButtons();
+        scanCameras();
+        validateForm();
+    });
+</script>
+
+<style>
+    #cameraList button.active,
+    #resolutionOptions button.active {
+        border-color: #0d6efd !important;
+        background-color: #e7f1ff !important;
+    }
+</style>
+
+{% endblock %}

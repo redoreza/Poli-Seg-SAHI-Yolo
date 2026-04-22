@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<div class="container mt-4">
+    <h2 class="mb-4">{{ title }}</h2>
+
+    <!-- Label Terdeteksi horizontal -->
+    <div class="mb-4 badge-labels">
+        <h5>Label Terdeteksi:</h5>
+        {% for cls_id, count in class_counts.items() %}
+        <span class="badge rounded-pill bg-primary me-2">
+            {{ class_names.get(cls_id, 'Class ' ~ cls_id) }}: {{ count }}
+        </span>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination controls -->
+    <nav aria-label="Page navigation" class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <div>
+            <form method="get" id="paginationForm" class="d-flex align-items-center gap-2">
+                <button name="page" value="{{ page - 1 }}" class="btn btn-outline-primary btn-sm" {% if page <= 1 %}disabled{% endif %}>Previous</button>
+                <span class="mx-2">Halaman {{ page }} dari {{ total_pages }}</span>
+                <button name="page" value="{{ page + 1 }}" class="btn btn-outline-primary btn-sm" {% if page>= total_pages %}disabled{% endif %}>Next</button>
+                <select name="per_page" id="perPageSelect" class="form-select form-select-sm ms-3" style="width: auto;">
+                    <option value="10" {% if per_page == 10 %}selected{% endif %}>10</option>
+                    <option value="20" {% if per_page == 20 %}selected{% endif %}>20</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                </select>
+            </form>
+        </div>
+    </nav>
+
+    <!-- Tombol hapus batch -->
+    <div class="mb-3">
+        <button id="btnDeleteSelected" class="btn btn-danger btn-sm" disabled>Hapus Data Terpilih</button>
+    </div>
+
+    <form id="dataForm" novalidate>
+        <div class="row g-3">
+            {% if data %}
+            {% for item in data %}
+            <div class="col-thumb">
+                <div class="card h-100">
+                    <div class="card-body position-relative">
+                        <h5 class="card-title">
+                            <input type="checkbox" class="select-checkbox me-2"
+                                   data-image="{{ item.image }}"
+                                   data-label="{{ item.label }}"
+                                   id="chk-{{ loop.index }}">
+                            <label for="chk-{{ loop.index }}">{{ item.split|capitalize }}</label>
+                        </h5>
+                        <div class="image-container">
+                            <img src="{{ url_for('static', filename=item.image) }}"
+                                 alt="Annotation"
+                                 loading="lazy" />
+                            <svg id="svg-{{ loop.index }}"
+                                 preserveAspectRatio="xMidYMid meet"
+                                 style="pointer-events: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10;">
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <div class="col-12">
+                <div class="alert alert-info">Tidak ada data untuk ditampilkan.</div>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<script>
+  const classNames = {{ class_names|tojson }};
+  const data = {{ data|tojson }};
+
+  const btnDeleteSelected = document.getElementById('btnDeleteSelected');
+  const perPageSelect = document.getElementById('perPageSelect');
+  const paginationForm = document.getElementById('paginationForm');
+
+  function getColorForClass(cls) {
+    const colors = [
+      '#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231',
+      '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe',
+      '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000',
+      '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080'
+    ];
+    return colors[cls % colors.length];
+  }
+
+  function drawSegmentationPolygons(svgElement, labels, classNames, imgElement) {
+    while (svgElement.firstChild) {
+      svgElement.removeChild(svgElement.firstChild);
+    }
+    if (!labels || labels.length === 0) return;
+
+    const naturalWidth = imgElement.naturalWidth;
+    const naturalHeight = imgElement.naturalHeight;
+    const displayWidth = imgElement.clientWidth;
+    const displayHeight = imgElement.clientHeight;
+
+    const scaleX = displayWidth / naturalWidth;
+    const scaleY = displayHeight / naturalHeight;
+
+    const offsetX = (svgElement.clientWidth - displayWidth) / 2;
+    const offsetY = (svgElement.clientHeight - displayHeight) / 2;
+
+    labels.forEach(label => {
+      const cls = label.class_id;
+      const coords = label.coords;
+
+      if (!coords || coords.length < 6) return;
+
+      const points = [];
+      for (let i = 0; i < coords.length; i += 2) {
+        const x = coords[i] * naturalWidth * scaleX + offsetX;
+        const y = coords[i + 1] * naturalHeight * scaleY + offsetY;
+        points.push(`${x},${y}`);
+      }
+
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute('points', points.join(' '));
+      polygon.setAttribute('stroke', getColorForClass(cls));
+      polygon.setAttribute('fill', getColorForClass(cls));
+      polygon.setAttribute('fill-opacity', '0.3');
+      polygon.setAttribute('stroke-width', '2');
+      polygon.setAttribute('stroke-linejoin', 'round');
+      svgElement.appendChild(polygon);
+
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      const firstPoint = points[0].split(',');
+      text.setAttribute('x', firstPoint[0]);
+      text.setAttribute('y', firstPoint[1] - 5);
+      text.setAttribute('fill', getColorForClass(cls));
+      text.setAttribute('font-size', '14px');
+      text.setAttribute('font-weight', 'bold');
+      text.setAttribute('stroke', 'white');
+      text.setAttribute('stroke-width', '0.5');
+      text.textContent = classNames[cls] || `Class ${cls}`;
+      svgElement.appendChild(text);
+    });
+  }
+
+  function updateDeleteButtonState() {
+    const anyChecked = Array.from(document.querySelectorAll('.select-checkbox')).some(chk => chk.checked);
+    btnDeleteSelected.disabled = !anyChecked;
+  }
+
+  function attachCheckboxListeners() {
+    const checkboxes = document.querySelectorAll('.select-checkbox');
+    checkboxes.forEach(chk => {
+      chk.addEventListener('change', updateDeleteButtonState);
+    });
+    updateDeleteButtonState();
+  }
+
+  btnDeleteSelected.addEventListener('click', async () => {
+    if (!confirm('Yakin ingin menghapus data terpilih? Gambar dan label akan dihapus permanen.')) return;
+
+    const selectedCheckboxes = Array.from(document.querySelectorAll('.select-checkbox:checked'));
+    if (selectedCheckboxes.length === 0) return;
+
+    btnDeleteSelected.disabled = true;
+    btnDeleteSelected.textContent = 'Menghapus...';
+
+    for (const chk of selectedCheckboxes) {
+      const imagePath = chk.getAttribute('data-image');
+      const labelPath = chk.getAttribute('data-label');
+
+      try {
+        const res = await fetch('{{ url_for("data.delete_data") }}', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({image: imagePath, label: labelPath})
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(`Gagal hapus ${imagePath}: ${err.error || 'Error tidak diketahui'}`);
+          btnDeleteSelected.disabled = false;
+          btnDeleteSelected.textContent = 'Hapus Data Terpilih';
+          return;
+        }
+      } catch (e) {
+        alert(`Error hapus ${imagePath}: ${e}`);
+        btnDeleteSelected.disabled = false;
+        btnDeleteSelected.textContent = 'Hapus Data Terpilih';
+        return;
+      }
+    }
+    window.location.reload();
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    attachCheckboxListeners();
+
+    data.forEach((item, idx) => {
+      const svgEl = document.getElementById(`svg-${idx + 1}`);
+      const imgEl = svgEl.previousElementSibling;
+      if (!svgEl || !imgEl) return;
+
+      if (imgEl.complete) {
+        drawSegmentationPolygons(svgEl, item.labels, classNames, imgEl);
+      } else {
+        imgEl.onload = () => {
+          drawSegmentationPolygons(svgEl, item.labels, classNames, imgEl);
+        };
+      }
+    });
+  });
+
+  document.getElementById('perPageSelect').addEventListener('change', function () {
+    document.getElementById('paginationForm').submit();
+  });
+</script>
+{% endblock %}

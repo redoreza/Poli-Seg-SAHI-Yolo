@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block main_content %}
+<h2>Auto Annotation - Experimental</h2>
+
+<!-- Pengaturan Split Data -->
+<div class="mb-4 border p-3 rounded">
+    <h5>Pengaturan Persentase Split Data (%)</h5>
+    <div class="row g-3 align-items-center">
+        <div class="col-auto">
+            <label for="trainSplit" class="col-form-label">Train</label>
+        </div>
+        <div class="col-auto">
+            <input type="number" id="trainSplit" class="form-control" value="70" min="0" max="100" required>
+        </div>
+        <div class="col-auto">
+            <label for="valSplit" class="col-form-label">Validation</label>
+        </div>
+        <div class="col-auto">
+            <input type="number" id="valSplit" class="form-control" value="20" min="0" max="100" required>
+        </div>
+        <div class="col-auto">
+            <label for="testSplit" class="col-form-label">Test</label>
+        </div>
+        <div class="col-auto">
+            <input type="number" id="testSplit" class="form-control" value="10" min="0" max="100" required>
+        </div>
+    </div>
+    <small id="splitErrorMsg" class="text-danger" style="display:none;">Total persentase harus 100%</small>
+</div>
+
+<!-- Pilih Mode -->
+<div class="mb-3">
+    <label>Pilih Mode:</label><br>
+    <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="mode" id="modeFile" value="file" checked>
+        <label class="form-check-label" for="modeFile">Upload File (Image/Video)</label>
+    </div>
+    <div class="form-check form-check-inline">
+        <input class="form-check-input" type="radio" name="mode" id="modeRealtime" value="realtime">
+        <label class="form-check-label" for="modeRealtime">Realtime Camera</label>
+    </div>
+</div>
+
+<!-- Form Upload File -->
+<form id="uploadForm" method="POST" enctype="multipart/form-data" action="{{ url_for('experimental.auto_annotation') }}">
+    <div class="mb-3">
+        <label for="annotation_type_file" class="form-label">Jenis Anotasi:</label>
+        <select name="annotation_type" id="annotation_type_file" class="form-select" required>
+            <option value="detection">Object Detection (Bounding Box)</option>
+            <option value="segmentation">Instance Segmentation (Mask)</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label for="fileInput">Pilih File:</label>
+        <input type="file" name="file" id="fileInput" class="form-control" required>
+    </div>
+
+    <!-- Hidden inputs untuk split ratio -->
+    <input type="hidden" name="train_ratio" id="trainRatioInput" value="0.7">
+    <input type="hidden" name="val_ratio" id="valRatioInput" value="0.2">
+    <input type="hidden" name="test_ratio" id="testRatioInput" value="0.1">
+
+    <input type="hidden" name="mode" value="image_or_video">
+
+    <button type="submit" id="submitBtn" class="btn btn-primary">Proses Anotasi Otomatis</button>
+</form>
+
+<!-- Kontrol Kamera Realtime -->
+<div id="realtimeControls" style="display:none; margin-top:20px;">
+    <div class="mb-3">
+        <label for="annotation_type_realtime" class="form-label">Jenis Anotasi:</label>
+        <select id="annotation_type_realtime" class="form-select" required>
+            <option value="detection">Object Detection (Bounding Box)</option>
+            <option value="segmentation" selected>Instance Segmentation (Mask)</option>
+        </select>
+    </div>
+
+    <button id="btnStartCamera" class="btn btn-success">Start Kamera</button>
+    <button id="btnStopCamera" class="btn btn-danger" disabled>Stop Kamera</button>
+    <button id="btnSnapshot" class="btn btn-secondary" disabled>Ambil Snapshot</button>
+
+    <div id="videoContainer" style="position:relative; max-width:640px; margin-top:20px;">
+        <video id="video" autoplay muted playsinline style="width:100%; border:2px solid #333;"></video>
+        <canvas id="canvasOverlay" style="position:absolute; top:0; left:0; pointer-events:none;"></canvas>
+    </div>
+</div>
+
+<script>
+    // Validasi dan update persentase split data
+    const trainSplitInput = document.getElementById('trainSplit');
+    const valSplitInput = document.getElementById('valSplit');
+    const testSplitInput = document.getElementById('testSplit');
+    const splitErrorMsg = document.getElementById('splitErrorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    const trainRatioInput = document.getElementById('trainRatioInput');
+    const valRatioInput = document.getElementById('valRatioInput');
+    const testRatioInput = document.getElementById('testRatioInput');
+
+    function updateRatios() {
+        const train = parseFloat(trainSplitInput.value) || 0;
+        const val = parseFloat(valSplitInput.value) || 0;
+        const test = parseFloat(testSplitInput.value) || 0;
+        const total = train + val + test;
+
+        if (total !== 100) {
+            splitErrorMsg.style.display = 'block';
+            submitBtn.disabled = true;
+        } else {
+            splitErrorMsg.style.display = 'none';
+            submitBtn.disabled = false;
+        }
+
+        trainRatioInput.value = (train / 100).toFixed(3);
+        valRatioInput.value = (val / 100).toFixed(3);
+        testRatioInput.value = (test / 100).toFixed(3);
+    }
+
+    trainSplitInput.addEventListener('input', updateRatios);
+    valSplitInput.addEventListener('input', updateRatios);
+    testSplitInput.addEventListener('input', updateRatios);
+    updateRatios();
+
+    // Toggle mode upload/realtime
+    const modeFileRadio = document.getElementById('modeFile');
+    const modeRealtimeRadio = document.getElementById('modeRealtime');
+    const uploadForm = document.getElementById('uploadForm');
+    const realtimeControls = document.getElementById('realtimeControls');
+
+    function toggleMode() {
+        if (modeFileRadio.checked) {
+            uploadForm.style.display = 'block';
+            realtimeControls.style.display = 'none';
+            uploadForm.querySelector('input[name="mode"]').value = 'image_or_video';
+        } else {
+            uploadForm.style.display = 'none';
+            realtimeControls.style.display = 'block';
+        }
+    }
+
+    modeFileRadio.addEventListener('change', toggleMode);
+    modeRealtimeRadio.addEventListener('change', toggleMode);
+    toggleMode();
+
+    // Realtime camera
+    const video = document.getElementById('video');
+    const canvasOverlay = document.getElementById('canvasOverlay');
+    const ctxOverlay = canvasOverlay.getContext('2d');
+    const btnStartCamera = document.getElementById('btnStartCamera');
+    const btnStopCamera = document.getElementById('btnStopCamera');
+    const btnSnapshot = document.getElementById('btnSnapshot');
+    const annotationTypeSelect = document.getElementById('annotation_type_realtime');
+
+    let stream = null;
+    let detecting = false;
+    let detectInterval = null;
+
+    function syncCanvasSize() {
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (w && h) {
+            canvasOverlay.width = w;
+            canvasOverlay.height = h;
+            canvasOverlay.style.width = video.clientWidth + "px";
+            canvasOverlay.style.height = video.clientHeight + "px";
+        }
+    }
+    video.onloadedmetadata = syncCanvasSize;
+    if ('ResizeObserver' in window) {
+        new ResizeObserver(syncCanvasSize).observe(video);
+    } else {
+        window.addEventListener('resize', syncCanvasSize);
+    }
+
+    btnStartCamera.addEventListener('click', async () => {
+        try {
+            const resp = await fetch('/setting/api/get-camera-setting');
+            const setting = await resp.json();
+
+            let constraints = { video: { width: 640, height: 480 } };
+            if (setting.selected_camera) {
+                constraints.video.deviceId = { exact: setting.selected_camera };
+                constraints.video.width = setting.camera_width || 640;
+                constraints.video.height = setting.camera_height || 480;
+            }
+
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            video.srcObject = stream;
+
+            btnStartCamera.disabled = true;
+            btnStopCamera.disabled = false;
+            btnSnapshot.disabled = false;
+
+            detectInterval = setInterval(sendFrameForDetection, 200);
+        } catch (err) {
+            alert('Gagal akses kamera: ' + err);
+        }
+    });
+
+    btnStopCamera.addEventListener('click', () => {
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            stream = null;
+        }
+        ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+        btnStartCamera.disabled = false;
+        btnStopCamera.disabled = true;
+        btnSnapshot.disabled = true;
+
+        if (detectInterval) {
+            clearInterval(detectInterval);
+            detectInterval = null;
+        }
+        detecting = false;
+    });
+
+    btnSnapshot.addEventListener('click', () => {
+        if (!video) return;
+
+        const combinedCanvas = document.createElement('canvas');
+        const combinedCtx = combinedCanvas.getContext('2d');
+
+        combinedCanvas.width = video.videoWidth;
+        combinedCanvas.height = video.videoHeight;
+
+        combinedCtx.drawImage(video, 0, 0, combinedCanvas.width, combinedCanvas.height);
+        combinedCtx.drawImage(canvasOverlay, 0, 0, combinedCanvas.width, combinedCanvas.height);
+
+        const dataUrl = combinedCanvas.toDataURL('image/png');
+
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = 'snapshot_with_mask.png';
+        link.click();
+    });
+
+    async function sendFrameForDetection() {
+        if (!stream || detecting) return;
+        detecting = true;
+
+        const captureCanvas = document.createElement('canvas');
+        const captureCtx = captureCanvas.getContext('2d');
+        captureCanvas.width = 320;
+        captureCanvas.height = 240;
+
+        captureCtx.drawImage(video, 0, 0, 320, 240);
+
+        const base64data = captureCanvas.toDataURL('image/jpeg', 0.7);
+
+        const annotation_type = annotationTypeSelect.value;
+
+        try {
+            const response = await fetch('/experimental/api/realtime-annotation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64data, annotation_type })
+            });
+
+            if (!response.ok) {
+                console.error('Response error:', response.statusText);
+                detecting = false;
+                return;
+            }
+
+            const data = await response.json();
+
+            ctxOverlay.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
+
+            if (annotation_type === 'segmentation' && data.masks) {
+                data.masks.forEach(maskSrc => {
+                    const imgMask = new Image();
+                    imgMask.onload = () => {
+                        ctxOverlay.globalAlpha = 0.5;
+                        ctxOverlay.drawImage(imgMask, 0, 0, canvasOverlay.width, canvasOverlay.height);
+                        ctxOverlay.globalAlpha = 1.0;
+                    };
+                    imgMask.src = maskSrc;
+                });
+            } else if (annotation_type === 'detection' && data.boxes) {
+                data.boxes.forEach(box => {
+                    const x1 = box.x1, y1 = box.y1, x2 = box.x2, y2 = box.y2;
+
+                    ctxOverlay.strokeStyle = 'lime';
+                    ctxOverlay.lineWidth = 2;
+                    ctxOverlay.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+                    const label = `${box.label} ${(box.confidence * 100).toFixed(1)}%`;
+                    ctxOverlay.font = "14px Arial";
+                    ctxOverlay.fillStyle = 'lime';
+
+                    const padding = 4;
+                    const textWidth = ctxOverlay.measureText(label).width;
+                    const textHeight = 16;
+
+                    ctxOverlay.fillRect(x1, y1 - textHeight, textWidth + padding * 2, textHeight);
+
+                    ctxOverlay.fillStyle = 'black';
+                    ctxOverlay.fillText(label, x1 + padding, y1 - textHeight + 13);
+                });
+            }
+        } catch (err) {
+            console.error('Error during detection:', err);
+        }
+
+        detecting = false;
+    }
+</script>
+{% endblock %}

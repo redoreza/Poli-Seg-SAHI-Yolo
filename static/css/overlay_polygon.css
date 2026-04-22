@@ -1,0 +1,65 @@
+/* overlay_polygon.css */
+.image-container {
+    position: relative !important;
+    max-height: 160px;
+    height: auto;
+    overflow: hidden !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    box-shadow: 0 0 8px rgba(0,0,0,0.1);
+}
+
+    .image-container img {
+        max-height: 160px;
+        width: auto;
+        max-width: 100% !important;
+        object-fit: contain !important;
+        display: block !important;
+        border-radius: 4px;
+    }
+
+    .image-container svg {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        pointer-events: none !important;
+        z-index: 10 !important;
+        user-select: none !important;
+        border-radius: 4px;
+    }
+
+.card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 1rem;
+    font-weight: 600;
+    user-select: none;
+}
+
+.badge-labels {
+    white-space: nowrap;
+    overflow-x: auto;
+    padding-bottom: 5px;
+}
+
+    .badge-labels .badge {
+        font-size: 0.9rem;
+        cursor: default;
+        margin-right: 0.5rem;
+    }
+
+    .badge-labels::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .badge-labels::-webkit-scrollbar-thumb {
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 4px;
+    }
